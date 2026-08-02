@@ -1,0 +1,31 @@
+# trippier-app-front base stack: image, port and env for the single `front`
+# service (Next.js). Two layers sit on top of this file:
+#
+#   docker-compose.dev.yml      hot reload    (added by `make up` and `make dev`)
+#   docker-compose.traefik.yml  reverse proxy (added by `make dev` only)
+#
+#   make up      -> hot reload, detached, published port (no Traefik)
+#   make dev     -> hot reload + Traefik on app.trippier.localhost
+#   make build   -> build the image        make push -> publish to the registry
+#
+# The API lives in its own repo (trippier-app-back): point API_URL at it.
+
+name: trippier-app-front
+
+x-defaults: &defaults
+  restart: unless-stopped
+
+services:
+
+  front:
+    image: ${REGISTRY:-ghcr.io}/${OWNER:-trippier-app}/app-front:${TAG:-latest}
+    build:
+      context: .
+      args:
+        API_URL: ${API_URL}
+        MAPTILER_API_KEY: ${MAPTILER_API_KEY}
+        MAPTILER_MAP_ID: ${MAPTILER_MAP_ID}
+    <<: *defaults
+    ports:
+      - "${FRONT_PORT:-3000}:3000"
+    env_file: .env

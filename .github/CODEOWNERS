@@ -1,0 +1,10 @@
+# Code owners are requested for review automatically when matching files change.
+# See https://docs.github.com/articles/about-code-owners
+
+*                       @ulysse-mercadal
+
+# Build, CI and infrastructure
+/.github/               @ulysse-mercadal
+/devops/                @ulysse-mercadal
+/Makefile               @ulysse-mercadal
+/Dockerfile*            @ulysse-mercadal
