@@ -1,0 +1,18 @@
+node_modules
+.next
+out
+build
+npm-debug.log
+
+# Not needed in the build context
+.git
+.gitignore
+.github
+.env
+.env.*
+*.md
+Dockerfile*
+.dockerignore
+devops
+Makefile
+*.tsbuildinfo

@@ -1,0 +1,19 @@
+# Hot-reload layer, added by BOTH `make up` and `make dev`.
+# Runs `next dev` from a bare bun image with the source bind-mounted; node_modules
+# and .next live in named volumes so host and container never fight over them.
+# No Traefik here (that lives in docker-compose.traefik.yml, added by `make dev`).
+
+services:
+
+  front:
+    build:
+      dockerfile: Dockerfile.dev
+    command: sh -c "bun install --frozen-lockfile && bun run dev -- -H 0.0.0.0"
+    volumes:
+      - .:/app:z
+      - front-modules:/app/node_modules
+      - front-next:/app/.next
+
+volumes:
+  front-modules:
+  front-next:

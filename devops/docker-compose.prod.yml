@@ -1,0 +1,42 @@
+# trippier-app-front production stack (VPS): NO Traefik of its own. It attaches to
+# the shared edge Traefik run by the public-API stack on the same VPS (which owns
+# ports 80/443 + Let's Encrypt) via that stack's network. Traefik discovers this
+# container, routes FRONT_DOMAIN to it and terminates TLS with its resolver "le".
+#
+# Requires, in .env: OWNER, FRONT_DOMAIN (app.trippier.dev) and — if the edge
+# network isn't the default — EDGE_NETWORK. The public-API stack must be up first
+# (it owns the network and the Traefik). IMAGE_TAG is set by the pipeline.
+#
+# front -> https://$FRONT_DOMAIN   (served through the shared edge Traefik)
+#
+# API_URL and the MAPTILER_* keys are baked into the client bundle at build time,
+# so they come from the build args in the pipeline, not from this file.
+
+name: trippier-app-front
+
+services:
+
+  front:
+    image: ghcr.io/${OWNER:-trippier-app}/app-front:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file: .env
+    networks:
+      - edge
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${EDGE_NETWORK:-trippier-public-api_default}"
+      - "traefik.http.routers.app-front.rule=Host(`${FRONT_DOMAIN:-app.trippier.dev}`)"
+      - "traefik.http.routers.app-front.entrypoints=websecure"
+      - "traefik.http.routers.app-front.tls.certresolver=le"
+      - "traefik.http.services.app-front.loadbalancer.server.port=3000"
+
+# The shared edge network (public-API stack's), joined as external.
+networks:
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-trippier-public-api_default}
