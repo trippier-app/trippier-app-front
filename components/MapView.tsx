@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useImperativeHandle, useMemo, useRef } from 'react';
+import { useCallback, useImperativeHandle, useRef } from 'react';
 import MapLibreMap, { Marker, type MapRef } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { cn } from '@/lib/cn';
@@ -49,6 +49,8 @@ export interface MapViewHandle {
 }
 
 interface MapViewProps {
+  /** MapTiler style URL resolved server-side; null when the key is unset. */
+  styleUrl: string | null;
   center: { lat: number; lng: number };
   zoom: number;
   markers: MapMarker[];
@@ -98,6 +100,7 @@ function glyphForPoiType(type: PoiType): string {
  * @returns The map canvas.
  */
 export default function MapView({
+  styleUrl,
   center,
   zoom,
   markers,
@@ -106,12 +109,6 @@ export default function MapView({
   ref,
 }: MapViewProps) {
   const mapRef = useRef<MapRef>(null);
-
-  const styleUrl = useMemo(() => {
-    const key = process.env.MAPTILER_API_KEY;
-    const mapId = process.env.MAPTILER_MAP_ID;
-    return key && mapId ? `https://api.maptiler.com/maps/${mapId}/style.json?key=${key}` : null;
-  }, []);
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat, lng, { zoom: flyZoom = 16, offsetX = 0, offsetY = 0 } = {}) => {
@@ -153,7 +150,7 @@ export default function MapView({
   if (!styleUrl) {
     return (
       <div className="bg-surface2 text-mute flex h-full items-center justify-center px-10 text-center font-mono text-[12px]">
-        MAPTILER_API_KEY / MAPTILER_MAP_ID are missing from .env — the map cannot load.
+        MAPTILER_API_KEY / MAPTILER_MAP_ID are missing from the environment — the map cannot load.
       </div>
     );
   }
