@@ -20,7 +20,12 @@ const ALLOWED_SUBPATHS = new Set([
   'providers/recommend',
 ]);
 
-const UPSTREAM_TIMEOUT_MS = 15_000;
+/**
+ * Generous because a cold search over a dense area legitimately takes ~20s:
+ * the upstream tile-cache fill runs one heavy Overpass query (QL budget 25s)
+ * before the area is cached and cheap.
+ */
+const UPSTREAM_TIMEOUT_MS = 35_000;
 
 /**
  * Builds the auth headers for an upstream POI API call.
