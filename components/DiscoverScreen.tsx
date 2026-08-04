@@ -54,6 +54,14 @@ const SEARCH_X = 20;
 const SEARCH_TOP = 19;
 /** Release below this fraction of the first snap collapses the drawer. */
 const CLOSE_RATIO = 0.55;
+/** Fraction of the stage width the results side panel takes on md+. */
+const PANEL_FRACTION = 1 / 3;
+/**
+ * Viewport width at which the results move from the bottom drawer to the
+ * side panel. Matches Tailwind's `md:` breakpoint, which gates the same
+ * switch in the markup — if one moves, the other must follow.
+ */
+const WIDE_MQ = '(min-width: 768px)';
 const DRAWER_EASE = [0.4, 0, 0.2, 1] as const;
 
 /**
@@ -75,7 +83,9 @@ function detailQueryFor(poi: EnrichedPoi): string {
 
 /**
  * Discover — the app's landing screen: a full-bleed map, a floating search
- * bar, and a draggable results drawer. Tapping a row's card pushes the
+ * bar, and a draggable results drawer. On tablet/desktop viewports
+ * ({@link WIDE_MQ}) the drawer gives way to a fixed results panel docked on
+ * the left, with the search bar at its top. Tapping a row's card pushes the
  * full-screen {@link PoiDetailScreen} overlay for that place, mirrored into
  * the URL as `?poi=…` so the page can be shared and reopened directly.
  *
@@ -95,7 +105,6 @@ function detailQueryFor(poi: EnrichedPoi): string {
 export default function DiscoverScreen() {
   const stageRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapViewHandle>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<AbortController | null>(null);
   const sawFirstViewport = useRef(false);
@@ -302,9 +311,16 @@ export default function DiscoverScreen() {
       }
       cameraBeforeFocus.current ??= mapRef.current?.getCamera() ?? null;
       suppressNextRefetch.current = true;
+      // On wide layouts the side panel covers the left of the canvas instead
+      // of the drawer covering the bottom, so the occlusion compensation
+      // flips from a vertical offset to a horizontal one: the visible map
+      // box runs from the panel's right gutter to the frame's right edge.
+      const wide = window.matchMedia(WIDE_MQ).matches;
+      const panelW = (stageRef.current?.clientWidth ?? 0) * PANEL_FRACTION;
       mapRef.current?.flyTo(poi.coords.lat, poi.coords.lng, {
         zoom: 17,
-        offsetY: (cutoutTop - snapHeights[targetSnap] - FRAME) / 2,
+        offsetX: wide ? (panelW + FRAME) / 2 : 0,
+        offsetY: wide ? 0 : (cutoutTop - snapHeights[targetSnap] - FRAME) / 2,
       });
     },
     [cutoutTop, snapHeights],
@@ -374,7 +390,12 @@ export default function DiscoverScreen() {
     if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) {
       return;
     }
-    mapRef.current?.flyTo(lat, lng, { zoom: 16 });
+    mapRef.current?.flyTo(lat, lng, {
+      zoom: 16,
+      offsetX: window.matchMedia(WIDE_MQ).matches
+        ? ((stageRef.current?.clientWidth ?? 0) * PANEL_FRACTION + FRAME) / 2
+        : 0,
+    });
     let cancelled = false;
     (async () => {
       const name = id.split(':').pop() || id;
@@ -416,15 +437,17 @@ export default function DiscoverScreen() {
   }, []);
 
   /**
-   * Brings a place's row into view inside the drawer list, so a selection
+   * Brings a place's row into view in whichever results list is visible —
+   * the drawer on mobile, the side panel on wide screens — so a selection
    * made on the map is visibly mirrored by the list. Deferred a frame so the
-   * drawer's snap change has been applied before the scroll resolves.
+   * drawer's snap change has been applied before the scroll resolves; the
+   * hidden list's scroll is a no-op.
    */
   const scrollRowIntoView = useCallback((poiId: string) => {
     requestAnimationFrame(() => {
-      listRef.current
-        ?.querySelector(`[data-poi-id="${CSS.escape(poiId)}"]`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      stageRef.current
+        ?.querySelectorAll(`[data-poi-id="${CSS.escape(poiId)}"]`)
+        .forEach(row => row.scrollIntoView({ behavior: 'smooth', block: 'center' }));
     });
   }, []);
 
@@ -467,6 +490,58 @@ export default function DiscoverScreen() {
     [drawerH, snapHeights, closeDrawer],
   );
 
+  // Results content shared by the mobile drawer and the wide-screen side
+  // panel — only the container differs between the two layouts.
+  const resultsHeader = (
+    <header className="flex items-start justify-between gap-3 px-5 pb-2">
+      <div className="min-w-0">
+        <h2 className="text-ink text-[22px] font-bold tracking-tight">
+          In this area
+          <span className="bg-emerald ml-1 inline-block size-1.5 rounded-pill align-middle" />
+        </h2>
+        <p className="text-mute mt-1 truncate font-mono text-[12.5px]">{headerMeta}</p>
+      </div>
+    </header>
+  );
+
+  const resultsChips = (
+    <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-2.5">
+      {DISCOVER_CHIPS.map(chip => (
+        <Chip
+          key={chip.id}
+          label={chip.label}
+          active={chipId === chip.id}
+          onClick={() => setChipId(chip.id)}
+        />
+      ))}
+    </div>
+  );
+
+  const resultsRows = (
+    <>
+      {visiblePois.map(poi => (
+        <div key={poi.id} data-poi-id={poi.id}>
+          <PoiRow
+            name={poi.name}
+            meta={formatPoiMeta(poi, activeChip.label)}
+            type={poi.type}
+            distanceMeters={poi.distance}
+            selected={poi.id === selectedId}
+            onSelect={() => openDetail(poi)}
+            onZoom={poi.coords ? () => focusOnPoi(poi, snap === 0 ? 1 : snap) : undefined}
+          />
+        </div>
+      ))}
+      {!loading && visiblePois.length === 0 ? (
+        <p className="text-mute px-6 py-8 text-center font-mono text-[13px]">
+          {tooFarOut
+            ? "You're too zoomed out — pinch in and we'll surface places around you."
+            : 'No place matches this view yet — try a different filter or move the map.'}
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <div ref={stageRef} className="relative h-full w-full overflow-hidden">
       <div className="absolute inset-0">
@@ -490,7 +565,7 @@ export default function DiscoverScreen() {
        */}
       <motion.div
         aria-hidden
-        className="pointer-events-none absolute z-10 rounded-xl"
+        className="pointer-events-none absolute z-10 rounded-xl md:hidden"
         style={{
           top: cutoutTop,
           left: FRAME,
@@ -503,7 +578,7 @@ export default function DiscoverScreen() {
       />
 
       <div
-        className="pointer-events-none absolute z-20"
+        className="pointer-events-none absolute z-20 md:hidden"
         style={{ top: SEARCH_TOP, left: SEARCH_X, right: SEARCH_X }}>
         <SearchBar
           className="pointer-events-auto"
@@ -547,7 +622,7 @@ export default function DiscoverScreen() {
           type="button"
           onClick={() => setSnap(2)}
           style={{ bottom: TABBAR_RESERVED + 14 }}
-          className="bg-surface shadow-e2 text-emerald-deep absolute left-1/2 z-20 flex max-w-[80%] -translate-x-1/2 items-center gap-1.5 rounded-pill px-3.5 py-2 text-[12.5px] font-semibold tracking-tight">
+          className="bg-surface shadow-e2 text-emerald-deep absolute left-1/2 z-20 flex max-w-[80%] -translate-x-1/2 items-center gap-1.5 rounded-pill px-3.5 py-2 text-[12.5px] font-semibold tracking-tight md:hidden">
           <MapPin size={14} />
           <span className="truncate">{headerMeta}</span>
         </button>
@@ -556,7 +631,7 @@ export default function DiscoverScreen() {
       <motion.section
         aria-label="Results"
         style={{ height: drawerH }}
-        className="bg-surface shadow-e3 absolute inset-x-3 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-xl"
+        className="bg-surface shadow-e3 absolute inset-x-3 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-xl md:hidden"
         // The drawer is inert when collapsed so the map keeps every gesture.
         inert={!open}>
         <motion.div
@@ -573,53 +648,69 @@ export default function DiscoverScreen() {
           <span className="bg-mute2 h-1.5 w-10 rounded-pill" />
         </motion.div>
 
-        <header className="flex items-start justify-between gap-3 px-5 pb-2">
-          <div className="min-w-0">
-            <h2 className="text-ink text-[22px] font-bold tracking-tight">
-              In this area
-              <span className="bg-emerald ml-1 inline-block size-1.5 rounded-pill align-middle" />
-            </h2>
-            <p className="text-mute mt-1 truncate font-mono text-[12.5px]">{headerMeta}</p>
-          </div>
-        </header>
+        {resultsHeader}
 
-        <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-2.5">
-          {DISCOVER_CHIPS.map(chip => (
-            <Chip
-              key={chip.id}
-              label={chip.label}
-              active={chipId === chip.id}
-              onClick={() => setChipId(chip.id)}
-            />
-          ))}
-        </div>
+        {resultsChips}
 
         <div
-          ref={listRef}
           className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2"
           style={{ paddingBottom: TABBAR_RESERVED }}>
-          {visiblePois.map(poi => (
-            <div key={poi.id} data-poi-id={poi.id}>
-              <PoiRow
-                name={poi.name}
-                meta={formatPoiMeta(poi, activeChip.label)}
-                type={poi.type}
-                distanceMeters={poi.distance}
-                selected={poi.id === selectedId}
-                onSelect={() => openDetail(poi)}
-                onZoom={poi.coords ? () => focusOnPoi(poi, snap === 0 ? 1 : snap) : undefined}
-              />
-            </div>
-          ))}
-          {!loading && visiblePois.length === 0 ? (
-            <p className="text-mute px-6 py-8 text-center font-mono text-[13px]">
-              {tooFarOut
-                ? "You're too zoomed out — pinch in and we'll surface places around you."
-                : 'No place matches this view yet — try a different filter or move the map.'}
-            </p>
-          ) : null}
+          {resultsRows}
         </div>
       </motion.section>
+
+      {/*
+        Tablet / desktop (md+): the results live in a fixed panel on the left
+        instead of the bottom drawer — the drawer, its pill and the mobile
+        cutout are all mobile-only. The map stays full-bleed behind, framed
+        by the same rounded-cutout trick as on mobile (below); focus flights
+        land their target in the visible part (see focusOnPoi).
+       */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute z-10 hidden rounded-xl md:block"
+        style={{
+          top: FRAME,
+          left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
+          right: FRAME,
+          bottom: FRAME,
+          boxShadow: '0 0 0 9999px var(--m-surface)',
+        }}
+      />
+
+      <section
+        aria-label="Results"
+        className="bg-surface shadow-e2 absolute z-20 hidden flex-col overflow-hidden rounded-xl md:flex"
+        style={{ top: FRAME, bottom: FRAME, left: FRAME, width: `${PANEL_FRACTION * 100}%` }}>
+        <div className="px-3 pt-3 pb-2">
+          <SearchBar
+            value={query}
+            onValueChange={setQuery}
+            leading={<Search size={19} />}
+            trailing={
+              query ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setQuery('')}
+                  className="text-mute hover:text-ink flex size-8 items-center justify-center">
+                  <X size={16} />
+                </button>
+              ) : undefined
+            }
+          />
+        </div>
+
+        {resultsHeader}
+
+        {resultsChips}
+
+        <div
+          className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2"
+          style={{ paddingBottom: TABBAR_RESERVED }}>
+          {resultsRows}
+        </div>
+      </section>
 
       {/* Full-screen POI detail pushed over the map + drawer, so both stay
           mounted underneath and popping back restores them untouched. */}

@@ -20,6 +20,13 @@ export interface MapMarker {
 export interface FlyToOptions {
   zoom?: number;
   /**
+   * Horizontal shift, in pixels, of where the target lands relative to the
+   * canvas centre. The desktop layout covers the left side of the full-bleed
+   * map with the results panel, so the caller passes half its width to land
+   * the target in the middle of the visible half.
+   */
+  offsetX?: number;
+  /**
    * Vertical shift, in pixels, of where the target lands relative to the
    * canvas centre. The drawer covers the lower part of a full-bleed map, so
    * the caller passes a negative value to drop the target into the middle of
@@ -107,11 +114,11 @@ export default function MapView({
   }, []);
 
   useImperativeHandle(ref, () => ({
-    flyTo: (lat, lng, { zoom: flyZoom = 16, offsetY = 0 } = {}) => {
+    flyTo: (lat, lng, { zoom: flyZoom = 16, offsetX = 0, offsetY = 0 } = {}) => {
       mapRef.current?.flyTo({
         center: [lng, lat],
         zoom: flyZoom,
-        offset: [0, offsetY],
+        offset: [offsetX, offsetY],
         duration: 900,
       });
     },
