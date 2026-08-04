@@ -86,7 +86,9 @@ export default function PoiRow({
         type="button"
         onClick={onSelect}
         className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <span className="bg-surface2 text-emerald-deep flex size-10 shrink-0 items-center justify-center rounded-md">
+        {/* Same breakpoint flip as Chip: white sheet below md, surface2
+            panel above, so the thumb swaps fills to stay visible. */}
+        <span className="bg-surface2 text-emerald-deep flex size-10 shrink-0 items-center justify-center rounded-md md:bg-surface">
           <PoiTypeIcon type={type} size={18} />
         </span>
         <span className="min-w-0 flex-1">

@@ -688,9 +688,12 @@ export default function DiscoverScreen() {
         }}
       />
 
+      {/* The whole panel sits between the app background and the white
+          chrome (surface2): header, chips and list share one colour, and
+          the docked tab bar plus the floating pills read against it. */}
       <section
         aria-label="Results"
-        className="bg-surface shadow-e2 absolute z-20 hidden flex-col overflow-hidden rounded-xl md:flex"
+        className="bg-surface2 shadow-e2 absolute z-20 hidden flex-col overflow-hidden rounded-xl md:flex"
         style={{ top: FRAME, bottom: FRAME, left: FRAME, width: `${PANEL_FRACTION * 100}%` }}>
         <div className="px-3 pt-3 pb-2">
           <SearchBar
@@ -715,10 +718,8 @@ export default function DiscoverScreen() {
 
         {resultsChips}
 
-        {/* Slightly darker than the panel chrome, so the docked tab bar
-            riding the list's bottom stays legible over it. */}
         <div
-          className="no-scrollbar bg-surface2 min-h-0 flex-1 overflow-y-auto px-2 pt-2"
+          className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pt-2"
           style={{ paddingBottom: TABBAR_RESERVED }}>
           {resultsRows}
         </div>
