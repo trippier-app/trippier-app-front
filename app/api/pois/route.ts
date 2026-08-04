@@ -73,12 +73,16 @@ export async function GET(request: Request): Promise<Response> {
       cache: 'no-store',
     });
     const body = await upstream.text();
-    return new Response(body, {
-      status: upstream.status,
-      headers: {
-        'content-type': upstream.headers.get('content-type') ?? 'application/json',
-      },
-    });
+    const headers: Record<string, string> = {
+      'content-type': upstream.headers.get('content-type') ?? 'application/json',
+    };
+    // Forwarded so the client can tell a genuinely empty area from a merge
+    // where one or more providers timed out.
+    const mergePartial = upstream.headers.get('x-merge-partial');
+    if (mergePartial) {
+      headers['x-merge-partial'] = mergePartial;
+    }
+    return new Response(body, { status: upstream.status, headers });
   } catch {
     return NextResponse.json({ error: 'POI API unreachable' }, { status: 503 });
   }

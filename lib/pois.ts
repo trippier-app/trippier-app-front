@@ -78,6 +78,12 @@ export interface EnrichedPoi {
 export interface SearchResult {
   total: number;
   results: EnrichedPoi[];
+  /**
+   * True when the upstream merge was partial (`X-Merge-Partial` header): at
+   * least one provider timed out, so a thin or empty result does not mean
+   * the area is actually empty.
+   */
+  partial?: boolean;
 }
 
 /** Parameters accepted by the radius search endpoints. */
@@ -140,5 +146,7 @@ export async function searchPois(
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(body?.error ?? `POI search failed (${response.status})`);
   }
-  return (await response.json()) as SearchResult;
+  const result = (await response.json()) as SearchResult;
+  result.partial = response.headers.get('x-merge-partial') !== null;
+  return result;
 }
