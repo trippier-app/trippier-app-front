@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import MapLibreMap, { Marker, type MapRef } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -38,6 +38,8 @@ const SEARCH_BAR_H = 52;
 const SEARCH_TOP = 19;
 const SEARCH_X = 20;
 const FRAME = 12;
+const PANEL_FRACTION = 1 / 3;
+const WIDE_MQ = '(min-width: 768px)';
 /**
  * Size of the round floating header buttons. The back one copies the exact
  * footprint of the search bar's 42px leading slot on the Discover screen —
@@ -423,6 +425,25 @@ function SourcesSection({
 
 type Slide = { kind: 'map' } | { kind: 'image'; url: string };
 
+/**
+ * Subscribes to the tablet/desktop breakpoint. Server snapshot is `false`,
+ * which is safe: the detail overlay only ever mounts client-side, after an
+ * interaction or a resolved deep link.
+ */
+function subscribeToWide(onChange: () => void): () => void {
+  const query = window.matchMedia(WIDE_MQ);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+function useIsWide(): boolean {
+  return useSyncExternalStore(
+    subscribeToWide,
+    () => window.matchMedia(WIDE_MQ).matches,
+    () => false,
+  );
+}
+
 interface PoiDetailScreenProps {
   poi: EnrichedPoi;
   onClose: () => void;
@@ -441,13 +462,16 @@ interface PoiDetailScreenProps {
  * still works, just starting on the first image, and the lat/lng line
  * disappears entirely.
  *
- * Rendered as a full-screen overlay fading in over the map, so the Discover
- * map and drawer stay mounted (and untouched) underneath.
+ * Rendered as an overlay fading in over the map, so the Discover map and
+ * drawer stay mounted (and untouched) underneath. Full-screen on mobile; on
+ * wide layouts it takes the framed map box only, keeping the results panel
+ * on the left visible and interactive.
  *
  * @param props - The place to render and the close callback.
  * @returns The POI detail overlay.
  */
 export default function PoiDetailScreen({ poi, onClose }: PoiDetailScreenProps) {
+  const wide = useIsWide();
   const rootRef = useRef<HTMLDivElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
   const [rootH, setRootH] = useState(0);
@@ -559,14 +583,32 @@ export default function PoiDetailScreen({ poi, onClose }: PoiDetailScreenProps) 
   return (
     <motion.div
       ref={rootRef}
-      className="bg-surface absolute inset-0 z-40"
+      className={cn(
+        'bg-surface absolute z-40',
+        wide ? 'shadow-e2 overflow-hidden rounded-xl' : 'inset-0',
+      )}
+      // On wide layouts the overlay takes the exact footprint of the framed
+      // map box, so the results panel on the left stays visible and alive.
+      style={
+        wide
+          ? {
+              top: FRAME,
+              bottom: FRAME,
+              right: FRAME,
+              left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
+            }
+          : undefined
+      }
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.25, ease: FADE_EASE }}>
       <div className="no-scrollbar h-full overflow-y-auto">
+        {/* On wide layouts the hero sits 12px inside the rounded detail box,
+            so its corner radius shrinks by that gap (30 → 18) to keep the
+            two curves concentric instead of pinching at the corners. */}
         <div
-          className="bg-emerald-soft shadow-e1 relative mx-3 overflow-hidden rounded-xl"
+          className="bg-emerald-soft shadow-e1 relative mx-3 overflow-hidden rounded-xl md:rounded-[18px]"
           style={{ marginTop: FRAME, height: mapH }}>
           {slides.length === 0 ? null : (
             <div

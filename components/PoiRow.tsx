@@ -80,7 +80,7 @@ export default function PoiRow({
     <div
       className={cn(
         'flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors',
-        selected ? 'bg-emerald-soft' : 'hover:bg-surface2',
+        selected ? 'bg-emerald-soft' : 'hover:bg-surface3',
       )}>
       <button
         type="button"

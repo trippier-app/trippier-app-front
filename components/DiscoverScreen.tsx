@@ -528,7 +528,17 @@ export default function DiscoverScreen() {
             distanceMeters={poi.distance}
             selected={poi.id === selectedId}
             onSelect={() => openDetail(poi)}
-            onZoom={poi.coords ? () => focusOnPoi(poi, snap === 0 ? 1 : snap) : undefined}
+            onZoom={
+              poi.coords
+                ? () => {
+                    // On wide layouts the list stays interactive while a
+                    // detail covers the map box — zooming to a place means
+                    // showing the map, so any open detail folds first.
+                    closeDetail();
+                    focusOnPoi(poi, snap === 0 ? 1 : snap);
+                  }
+                : undefined
+            }
           />
         </div>
       ))}
@@ -705,15 +715,18 @@ export default function DiscoverScreen() {
 
         {resultsChips}
 
+        {/* Slightly darker than the panel chrome, so the docked tab bar
+            riding the list's bottom stays legible over it. */}
         <div
-          className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2"
+          className="no-scrollbar bg-surface2 min-h-0 flex-1 overflow-y-auto px-2 pt-2"
           style={{ paddingBottom: TABBAR_RESERVED }}>
           {resultsRows}
         </div>
       </section>
 
-      {/* Full-screen POI detail pushed over the map + drawer, so both stay
-          mounted underneath and popping back restores them untouched. */}
+      {/* POI detail pushed over the map + drawer (full-screen on mobile, the
+          framed map box on wide layouts), so everything underneath stays
+          mounted and popping back restores it untouched. */}
       <AnimatePresence>
         {detailPoi ? (
           <PoiDetailScreen key={detailPoi.id} poi={detailPoi} onClose={closeDetail} />

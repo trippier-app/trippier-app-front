@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -31,6 +31,14 @@ const BAR_PADDING = 6;
 const MIN_GAP = 4;
 /** Clearance between the bar and the bottom edge, on top of any safe area. */
 const BOTTOM_OFFSET = 20;
+/**
+ * Wide-layout geometry, kept in lockstep with DiscoverScreen's FRAME,
+ * PANEL_FRACTION and WIDE_MQ: on md+ the bar docks at the bottom of the
+ * results panel, taking its full width.
+ */
+const FRAME = 12;
+const PANEL_FRACTION = 1 / 3;
+const WIDE_MQ = '(min-width: 768px)';
 
 /**
  * Width of a cell when it is the active one — icon plus its label.
@@ -58,17 +66,19 @@ interface CellLayout {
 /**
  * Resolves the position and width of every cell for a given active tab.
  *
- * The bar's content width is constant ({@link BAR_CONTENT_WIDTH}); the gap
- * between cells expands to absorb the difference between the active label and
- * the widest one, so the bar itself never resizes as tabs change.
+ * The gap between cells expands to absorb whatever width the labels leave
+ * over, so the bar itself never resizes as tabs change. On mobile the
+ * content width is the constant {@link BAR_CONTENT_WIDTH}; on wide layouts
+ * it is the measured width of the panel-docked bar.
  *
  * @param activeIdx - Index of the active tab, or -1 when none matches.
+ * @param contentWidth - Inner width the cells have to spread across.
  * @returns Per-cell layout entries, in {@link TABS} order.
  */
-function computeLayout(activeIdx: number): CellLayout[] {
+function computeLayout(activeIdx: number, contentWidth: number): CellLayout[] {
   const activeW = activeIdx >= 0 ? activeWidthFor(TABS[activeIdx]) : INACTIVE_WIDTH;
   const slots = TABS.length - 1;
-  const gap = (BAR_CONTENT_WIDTH - activeW - slots * INACTIVE_WIDTH) / slots;
+  const gap = (contentWidth - activeW - slots * INACTIVE_WIDTH) / slots;
   const cells: CellLayout[] = [];
   let x = 0;
   for (let i = 0; i < TABS.length; i++) {
@@ -77,6 +87,24 @@ function computeLayout(activeIdx: number): CellLayout[] {
     x += width + gap;
   }
   return cells;
+}
+
+/**
+ * Subscribes to the tablet/desktop breakpoint; `false` on the server, which
+ * only means the first client render after hydration corrects the layout.
+ */
+function subscribeToWide(onChange: () => void): () => void {
+  const query = window.matchMedia(WIDE_MQ);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+function useIsWide(): boolean {
+  return useSyncExternalStore(
+    subscribeToWide,
+    () => window.matchMedia(WIDE_MQ).matches,
+    () => false,
+  );
 }
 
 /**
@@ -91,19 +119,55 @@ function computeLayout(activeIdx: number): CellLayout[] {
  */
 export default function TabBar() {
   const pathname = usePathname();
+  const wide = useIsWide();
+  const barRef = useRef<HTMLUListElement>(null);
+  const [measuredW, setMeasuredW] = useState<number | null>(null);
   const activeIdx = TABS.findIndex(
     tab => pathname === tab.href || pathname.startsWith(`${tab.href}/`),
   );
-  const cells = useMemo(() => computeLayout(activeIdx), [activeIdx]);
+
+  // On wide layouts the bar stretches with the panel, so the cell layout has
+  // to follow its real width instead of the constant.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!wide || !bar) {
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => setMeasuredW(entry.contentRect.width));
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [wide]);
+
+  const contentW =
+    wide && measuredW !== null
+      ? Math.max(BAR_CONTENT_WIDTH, measuredW - 2 * BAR_PADDING)
+      : BAR_CONTENT_WIDTH;
+  const cells = useMemo(() => computeLayout(activeIdx, contentW), [activeIdx, contentW]);
 
   return (
     <nav
       aria-label="Main"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center"
-      style={{ paddingBottom: `calc(env(safe-area-inset-bottom) + ${BOTTOM_OFFSET}px)` }}>
+      className="pointer-events-none fixed bottom-0 z-30 flex"
+      style={
+        wide
+          ? {
+              // Same FRAME gutter inside the panel as the rest of the app's
+              // chrome: the bar floats at the list's end, not edge to edge.
+              left: 2 * FRAME,
+              width: `calc(${PANEL_FRACTION * 100}% - ${2 * FRAME}px)`,
+              paddingBottom: 2 * FRAME,
+            }
+          : {
+              left: 0,
+              right: 0,
+              justifyContent: 'center',
+              paddingBottom: `calc(env(safe-area-inset-bottom) + ${BOTTOM_OFFSET}px)`,
+            }
+      }>
       <ul
+        ref={barRef}
         className="bg-surface shadow-e2 pointer-events-auto relative rounded-pill"
-        style={{ width: BAR_TOTAL_WIDTH, height: BAR_HEIGHT }}>
+        style={{ width: wide ? '100%' : BAR_TOTAL_WIDTH, height: BAR_HEIGHT }}>
         {activeIdx >= 0 ? (
           <motion.li
             aria-hidden
