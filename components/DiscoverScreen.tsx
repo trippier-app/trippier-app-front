@@ -341,6 +341,25 @@ export default function DiscoverScreen() {
     }
   }, []);
 
+  /**
+   * Wide-layout back affordance in the panel's search bar: drops the current
+   * selection, folds any open detail and glides the camera back to the
+   * viewport the user was exploring before zooming onto a place. The settled
+   * move re-runs the normal bounds flow, so the list follows the dezoom.
+   */
+  const resetFocus = useCallback(() => {
+    setDetailPoi(null);
+    setSelectedId(undefined);
+    if (new URLSearchParams(window.location.search).has('poi')) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+    const camera = cameraBeforeFocus.current;
+    if (camera) {
+      cameraBeforeFocus.current = null;
+      mapRef.current?.flyTo(camera.lat, camera.lng, { zoom: camera.zoom });
+    }
+  }, []);
+
   /** Opens a place's detail overlay and mirrors it into the URL. */
   const openDetail = useCallback((poi: EnrichedPoi) => {
     setSelectedId(poi.id);
@@ -699,7 +718,19 @@ export default function DiscoverScreen() {
           <SearchBar
             value={query}
             onValueChange={setQuery}
-            leading={<Search size={19} />}
+            leading={
+              selectedId ? (
+                <button
+                  type="button"
+                  aria-label="Back to the area view"
+                  onClick={resetFocus}
+                  className="flex size-full items-center justify-center">
+                  <ArrowLeft size={20} />
+                </button>
+              ) : (
+                <Search size={19} />
+              )
+            }
             trailing={
               query ? (
                 <button
