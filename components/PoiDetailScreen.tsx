@@ -53,10 +53,15 @@ const HEADER_BTN = 42;
  * detail media's bottom edge matches the framed map on the previous screen.
  */
 const MAP_HEIGHT_FRACTION = 1 / 3;
-/** Tilt the camera into a strong 3D angle so buildings stand up. */
-const MAP_PITCH_DEG = 60;
-/** Zoom level for the orbiting camera — close enough to read the area. */
-const MAP_ZOOM = 17;
+/**
+ * Tilt of the orbiting camera. Kept under 60°: paired with {@link MAP_ZOOM}'s
+ * altitude it reads as a drone shot — at street-level height a steeper pitch
+ * ploughs the camera through the extruded buildings and the frame fills with
+ * grey masses, as if the viewer were below ground.
+ */
+const MAP_PITCH_DEG = 55;
+/** Zoom level for the orbiting camera; see {@link MAP_PITCH_DEG}. */
+const MAP_ZOOM = 16;
 /** Cap on the rendered description, mirrored from the mobile app. */
 const DESCRIPTION_MAX_CHARS = 4000;
 /** Fixed embedded preview height — tall enough to read a headline + lead
