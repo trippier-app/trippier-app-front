@@ -1,40 +1,26 @@
-# Traefik layer, added ONLY by `make dev`. Publishes the web app behind a local
-# reverse proxy on *.trippier.localhost (the .localhost TLD resolves to
-# 127.0.0.1 natively, with no /etc/hosts edits needed).
+# Traefik routes, added ONLY by `make dev`. Attaches the web app to the shared
+# trippier-edge network so the Traefik of docker-compose.edge.yml can reach it
+# (the .localhost TLD resolves to 127.0.0.1 natively, no /etc/hosts edits).
 #
-#   http://app.trippier.localhost       -> front
-#   http://traefik.trippier.localhost   -> Traefik dashboard (also on :8090)
+#   http://app.trippier.localhost:8100       -> front
+#   http://traefik.trippier.localhost:8100   -> Traefik dashboard (also on :8101)
 #
 # The API is served by the trippier-app-back stack on
-# http://api.app.trippier.localhost — start that one first, or set API_URL to
-# wherever your backend runs.
+# http://api.app.trippier.localhost:8100 — start that one first, or set API_URL
+# to wherever your backend runs.
 
 services:
 
-  traefik:
-    image: traefik:v3.7
-    restart: unless-stopped
-    environment:
-      DOCKER_API_VERSION: "1.54"
-    ports:
-      - "80:80"
-      - "8090:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--api.dashboard=true"
-      - "--api.insecure=true"
-      - "--log.level=INFO"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.trippier.localhost`)"
-      - "traefik.http.routers.traefik.service=api@internal"
-
   front:
+    networks:
+      - default
+      - edge
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.app-front.rule=Host(`app.trippier.localhost`)"
       - "traefik.http.services.app-front.loadbalancer.server.port=3000"
+
+networks:
+  edge:
+    external: true
+    name: trippier-edge
