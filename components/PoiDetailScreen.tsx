@@ -134,14 +134,16 @@ function Tag({
  * animation **before** it ends, so the camera never pauses between segments —
  * the same trick as the mobile MapTilerMap's autoRotate.
  */
-function HeroMapSlide({ lat, lng }: { lat: number; lng: number }) {
+function HeroMapSlide({
+  lat,
+  lng,
+  styleUrl,
+}: {
+  lat: number;
+  lng: number;
+  styleUrl: string | null;
+}) {
   const mapRef = useRef<MapRef>(null);
-
-  const styleUrl = useMemo(() => {
-    const key = process.env.MAPTILER_API_KEY;
-    const mapId = process.env.MAPTILER_MAP_ID;
-    return key && mapId ? `https://api.maptiler.com/maps/${mapId}/style.json?key=${key}` : null;
-  }, []);
 
   useEffect(() => {
     const SEGMENT_DEG = 90;
@@ -165,7 +167,7 @@ function HeroMapSlide({ lat, lng }: { lat: number; lng: number }) {
   if (!styleUrl) {
     return (
       <div className="bg-surface2 text-mute flex h-full items-center justify-center px-10 text-center font-mono text-[12px]">
-        MAPTILER_API_KEY / MAPTILER_MAP_ID are missing from .env — the map cannot load.
+        MAPTILER_API_KEY / MAPTILER_MAP_ID are missing from the environment — the map cannot load.
       </div>
     );
   }
@@ -451,6 +453,8 @@ function useIsWide(): boolean {
 
 interface PoiDetailScreenProps {
   poi: EnrichedPoi;
+  /** MapTiler style URL resolved server-side; null when the key is unset. */
+  mapStyleUrl: string | null;
   onClose: () => void;
 }
 
@@ -475,7 +479,7 @@ interface PoiDetailScreenProps {
  * @param props - The place to render and the close callback.
  * @returns The POI detail overlay.
  */
-export default function PoiDetailScreen({ poi, onClose }: PoiDetailScreenProps) {
+export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetailScreenProps) {
   const wide = useIsWide();
   const rootRef = useRef<HTMLDivElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -623,7 +627,11 @@ export default function PoiDetailScreen({ poi, onClose }: PoiDetailScreenProps) 
               {slides.map((slide, index) =>
                 slide.kind === 'map' ? (
                   <div key="map" className="h-full w-full shrink-0 snap-center">
-                    <HeroMapSlide lat={poi.coords!.lat} lng={poi.coords!.lng} />
+                    <HeroMapSlide
+                      lat={poi.coords!.lat}
+                      lng={poi.coords!.lng}
+                      styleUrl={mapStyleUrl}
+                    />
                   </div>
                 ) : (
                   // eslint-disable-next-line @next/next/no-img-element -- provider images come from arbitrary hosts next/image is not configured for

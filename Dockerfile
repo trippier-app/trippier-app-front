@@ -8,13 +8,6 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 
 COPY . .
 
-ARG API_URL
-ARG MAPTILER_API_KEY
-ARG MAPTILER_MAP_ID
-ENV API_URL=$API_URL \
-    MAPTILER_API_KEY=$MAPTILER_API_KEY \
-    MAPTILER_MAP_ID=$MAPTILER_MAP_ID
-
 RUN bun run build
 
 
