@@ -40,10 +40,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            API_URL=${{ secrets.API_URL }}
-            MAPTILER_API_KEY=${{ secrets.MAPTILER_API_KEY }}
-            MAPTILER_MAP_ID=${{ secrets.MAPTILER_MAP_ID }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

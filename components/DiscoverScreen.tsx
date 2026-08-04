@@ -108,7 +108,12 @@ function detailQueryFor(poi: EnrichedPoi): string {
  *
  * @returns The Discover screen.
  */
-export default function DiscoverScreen() {
+interface DiscoverScreenProps {
+  /** MapTiler style URL resolved server-side; null when the key is unset. */
+  mapStyleUrl: string | null;
+}
+
+export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapViewHandle>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -606,6 +611,7 @@ export default function DiscoverScreen() {
       <div className="absolute inset-0">
         <MapView
           ref={mapRef}
+          styleUrl={mapStyleUrl}
           center={DISCOVER_DEFAULT_CENTER}
           zoom={DISCOVER_DEFAULT_ZOOM}
           markers={markers}
@@ -791,7 +797,12 @@ export default function DiscoverScreen() {
           mounted and popping back restores it untouched. */}
       <AnimatePresence>
         {detailPoi ? (
-          <PoiDetailScreen key={detailPoi.id} poi={detailPoi} onClose={closeDetail} />
+          <PoiDetailScreen
+            key={detailPoi.id}
+            poi={detailPoi}
+            mapStyleUrl={mapStyleUrl}
+            onClose={closeDetail}
+          />
         ) : null}
       </AnimatePresence>
     </div>

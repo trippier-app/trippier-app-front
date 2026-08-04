@@ -32,5 +32,3 @@ jobs:
       - uses: actions/checkout@v7
       - run: bun install --frozen-lockfile
       - run: bun run build
-        env:
-          API_URL: http://localhost:3001
