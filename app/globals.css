@@ -1,32 +1,118 @@
 @import 'tailwindcss';
 
+/*
+ * Design tokens ported from the mobile app (src/theme/tokens.ts). The
+ * interface theme (`light` default, `dark`, `tonner`) is driven by a
+ * `data-theme` attribute on <html>; the map theme lives on MapTiler.
+ *
+ * The `tonner` interface collapses every emerald token to black so the exact
+ * same components render in monochrome with zero markup branching.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --m-bg: #eef2f0;
+  --m-surface: #ffffff;
+  --m-surface2: #f3f6f4;
+  --m-surface3: #e9eeeb;
+  --m-ink: #18211d;
+  --m-ink2: #59635e;
+  --m-mute: #8b938e;
+  --m-mute2: #b3bab5;
+  --m-line: #e7ecea;
+  --m-emerald: #0c9466;
+  --m-emerald-deep: #0a6f4d;
+  --m-emerald-soft: #e6f4ed;
+  --m-on-emerald: #ffffff;
+
+  --m-shadow-e1: 0 2px 6px rgb(24 33 29 / 0.06);
+  --m-shadow-e2: 0 8px 20px rgb(24 33 29 / 0.07);
+  --m-shadow-e3: 0 10px 30px rgb(24 33 29 / 0.13);
+}
+
+[data-theme='dark'] {
+  --m-bg: #14171a;
+  --m-surface: #1b2023;
+  --m-surface2: #232a2d;
+  --m-surface3: #2b3236;
+  --m-ink: #eef1f0;
+  --m-ink2: #a8b0ad;
+  --m-mute: #828a86;
+  --m-mute2: #5b635f;
+  --m-line: #2c3338;
+  --m-emerald: #0c9466;
+  --m-emerald-deep: #44c391;
+  --m-emerald-soft: #163528;
+  --m-on-emerald: #ffffff;
+
+  --m-shadow-e1: 0 2px 6px rgb(0 0 0 / 0.3);
+  --m-shadow-e2: 0 8px 20px rgb(0 0 0 / 0.38);
+  --m-shadow-e3: 0 10px 30px rgb(0 0 0 / 0.48);
+}
+
+[data-theme='tonner'] {
+  --m-bg: #f7f7f7;
+  --m-surface: #ffffff;
+  --m-surface2: #f0f0f0;
+  --m-surface3: #e6e6e6;
+  --m-ink: #111111;
+  --m-ink2: #444444;
+  --m-mute: #777777;
+  --m-mute2: #aaaaaa;
+  --m-line: #dcdcdc;
+  --m-emerald: #111111;
+  --m-emerald-deep: #111111;
+  --m-emerald-soft: #ececec;
+  --m-on-emerald: #ffffff;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--m-bg);
+  --color-surface: var(--m-surface);
+  --color-surface2: var(--m-surface2);
+  --color-surface3: var(--m-surface3);
+  --color-ink: var(--m-ink);
+  --color-ink2: var(--m-ink2);
+  --color-mute: var(--m-mute);
+  --color-mute2: var(--m-mute2);
+  --color-line: var(--m-line);
+  --color-emerald: var(--m-emerald);
+  --color-emerald-deep: var(--m-emerald-deep);
+  --color-emerald-soft: var(--m-emerald-soft);
+  --color-on-emerald: var(--m-on-emerald);
+
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-pill: 999px;
+
+  --shadow-e1: var(--m-shadow-e1);
+  --shadow-e2: var(--m-shadow-e2);
+  --shadow-e3: var(--m-shadow-e3);
+
+  --font-display: var(--font-bricolage), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--m-bg);
+  color: var(--m-ink);
+  font-family: var(--font-bricolage), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -36,4 +122,9 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* MapLibre ships its own control chrome; the app draws its own instead. */
+.maplibregl-ctrl-logo {
+  display: none !important;
 }
