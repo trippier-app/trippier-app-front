@@ -27,5 +27,7 @@ services:
         MAPTILER_MAP_ID: ${MAPTILER_MAP_ID}
     <<: *defaults
     ports:
-      - "${FRONT_PORT:-3000}:3000"
+      - "${FRONT_PORT:-3010}:3000"
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
