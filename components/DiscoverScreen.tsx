@@ -33,6 +33,12 @@ const FETCH_LIMIT = 30;
 const REFETCH_MS = 500;
 const COLD_BOOT_RADIUS_M = 1500;
 /**
+ * Delay before the single quiet retry of a search whose merge came back
+ * partial *and* empty. Partial responses are not cached upstream, so a
+ * second attempt can catch the providers on a better beat.
+ */
+const PARTIAL_RETRY_MS = 2500;
+/**
  * Escalating radii for the searches re-resolving a shared `?poi=` deep link.
  * The API has no by-id lookup, so the shared coordinates are searched and
  * the id picked out of the results. Providers answer partially under load,
@@ -106,6 +112,7 @@ export default function DiscoverScreen() {
   const stageRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapViewHandle>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<AbortController | null>(null);
   const sawFirstViewport = useRef(false);
   const dragStartHeight = useRef(0);
@@ -127,6 +134,7 @@ export default function DiscoverScreen() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [tooFarOut, setTooFarOut] = useState(false);
+  const [partialResults, setPartialResults] = useState(false);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -179,31 +187,46 @@ export default function DiscoverScreen() {
    */
   const loadPois = useCallback(
     async (lat: number, lng: number, radius: number, types: (typeof activeChip)['types']) => {
-      inflight.current?.abort();
-      const controller = new AbortController();
-      inflight.current = controller;
+      async function run(attempt: number): Promise<void> {
+        inflight.current?.abort();
+        if (retryTimer.current) {
+          clearTimeout(retryTimer.current);
+          retryTimer.current = null;
+        }
+        const controller = new AbortController();
+        inflight.current = controller;
 
-      setLoading(true);
-      setErrorMessage(null);
-      try {
-        const result = await searchPois(
-          { lat, lng, radius, limit: FETCH_LIMIT, types },
-          controller.signal,
-        );
-        setPois([...result.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)));
-      } catch (error) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setErrorMessage(error instanceof Error ? error.message : 'Could not reach the POI API');
-      } finally {
-        if (inflight.current === controller) {
-          inflight.current = null;
-        }
-        if (!controller.signal.aborted) {
-          setLoading(false);
+        setLoading(true);
+        setErrorMessage(null);
+        try {
+          const result = await searchPois(
+            { lat, lng, radius, limit: FETCH_LIMIT, types },
+            controller.signal,
+          );
+          setPois([...result.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)));
+          setPartialResults(result.partial ?? false);
+          // An empty *partial* merge usually means a provider timed out, not
+          // that the area is empty — retry once, quietly.
+          if (result.partial && result.results.length === 0 && attempt === 0) {
+            retryTimer.current = setTimeout(() => {
+              run(1);
+            }, PARTIAL_RETRY_MS);
+          }
+        } catch (error) {
+          if (controller.signal.aborted) {
+            return;
+          }
+          setErrorMessage(error instanceof Error ? error.message : 'Could not reach the POI API');
+        } finally {
+          if (inflight.current === controller) {
+            inflight.current = null;
+          }
+          if (!controller.signal.aborted) {
+            setLoading(false);
+          }
         }
       }
+      await run(0);
     },
     [],
   );
@@ -273,6 +296,9 @@ export default function DiscoverScreen() {
     () => () => {
       if (refetchTimer.current) {
         clearTimeout(refetchTimer.current);
+      }
+      if (retryTimer.current) {
+        clearTimeout(retryTimer.current);
       }
       inflight.current?.abort();
     },
@@ -490,7 +516,9 @@ export default function DiscoverScreen() {
   const headerMeta = tooFarOut
     ? 'Zoom in to see places'
     : (errorMessage ??
-      (loading ? 'Looking around you…' : `${visiblePois.length} places in this area`));
+      (loading
+        ? 'Looking around you…'
+        : `${visiblePois.length} places in this area${partialResults ? ' · some sources are slow' : ''}`));
 
   /** Picks the snap whose height is closest to where the drag was released. */
   const commitSnap = useCallback(
@@ -565,7 +593,9 @@ export default function DiscoverScreen() {
         <p className="text-mute px-6 py-8 text-center font-mono text-[13px]">
           {tooFarOut
             ? "You're too zoomed out — pinch in and we'll surface places around you."
-            : 'No place matches this view yet — try a different filter or move the map.'}
+            : partialResults
+              ? 'Our sources are answering slowly right now — retrying in a moment…'
+              : 'No place matches this view yet — try a different filter or move the map.'}
         </p>
       ) : null}
     </>
