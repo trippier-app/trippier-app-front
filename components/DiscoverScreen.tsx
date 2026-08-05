@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import Chip from '@/components/Chip';
+import { cn } from '@/lib/cn';
 import MapView, { type MapCamera, type MapMarker, type MapViewHandle } from '@/components/MapView';
 import PoiDetailScreen from '@/components/PoiDetailScreen';
 import PoiRow from '@/components/PoiRow';
@@ -12,6 +13,7 @@ import {
   DISCOVER_CHIPS,
   DISCOVER_DEFAULT_CENTER,
   DISCOVER_DEFAULT_ZOOM,
+  DISCOVER_USER_ZOOM,
   formatPoiMeta,
   isInBounds,
   isZoomedTooFarOut,
@@ -31,7 +33,6 @@ const FETCH_LIMIT = 30;
  * feeling responsive once the user stops moving the map.
  */
 const REFETCH_MS = 500;
-const COLD_BOOT_RADIUS_M = 1500;
 /**
  * Delay before the single quiet retry of a search whose merge came back
  * partial *and* empty. Partial responses are not cached upstream, so a
@@ -100,7 +101,8 @@ function detailQueryFor(poi: EnrichedPoi): string {
  *
  * POI data flow mirrors the mobile app:
  *
- * 1. On mount, fetch around {@link DISCOVER_DEFAULT_CENTER}.
+ * 1. The camera opens on the whole world and flies to the user once geolocation
+ *    resolves; nothing is fetched until a viewport is worth querying.
  * 2. On every settled viewport (debounced to {@link REFETCH_MS}), re-fetch
  *    around the new center using {@link radiusFromBounds}.
  * 3. Both pins and rows are clipped to {@link isInBounds}, so a stale fetch
@@ -119,7 +121,8 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<AbortController | null>(null);
-  const sawFirstViewport = useRef(false);
+  const userMoved = useRef(false);
+  const flewToUser = useRef(false);
   const dragStartHeight = useRef(0);
   const suppressNextRefetch = useRef(false);
   /**
@@ -144,6 +147,8 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const [detailPoi, setDetailPoi] = useState<EnrichedPoi | null>(null);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   const drawerH = useMotionValue(0);
   // The cutout stops one frame-width short of the drawer, so the white band
@@ -166,6 +171,20 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
 
   const open = snap > 0;
   const isFull = snap === 3;
+
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia(WIDE_MQ);
+    const sync = () => setWide(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  const mapInset = useMemo(
+    () => (wide ? undefined : { top: cutoutTop, bottom: snapHeights[snap] }),
+    [wide, snap, snapHeights, cutoutTop],
+  );
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -257,7 +276,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
 
   const handleBoundsChange = useCallback(
     (next: MapBounds, center: { lat: number; lng: number }) => {
-      sawFirstViewport.current = true;
+      setMapReady(true);
       // A viewport change we caused ourselves by flying to a place the user
       // just picked must leave the results alone: re-querying, or re-clipping
       // rows and pins to the zoomed-in bounds, would reshuffle the list right
@@ -273,19 +292,34 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     [scheduleRefetch],
   );
 
-  // Cold-boot fetch around the default center, before the map reports its
-  // first viewport.
   useEffect(() => {
-    if (sawFirstViewport.current) {
+    if (!navigator.geolocation) {
       return;
     }
-    loadPois(
-      DISCOVER_DEFAULT_CENTER.lat,
-      DISCOVER_DEFAULT_CENTER.lng,
-      COLD_BOOT_RADIUS_M,
-      DISCOVER_CHIPS[0].types,
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        if (!cancelled) {
+          setUserCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
+        }
+      },
+      () => {},
+      { timeout: 10000, maximumAge: 300000 },
     );
-  }, [loadPois]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The position and the map become available in either order, so the flight
+  // waits for both — and is skipped once the user has taken the camera over.
+  useEffect(() => {
+    if (!userCoords || !mapReady || userMoved.current || flewToUser.current) {
+      return;
+    }
+    flewToUser.current = true;
+    mapRef.current?.flyTo(userCoords.lat, userCoords.lng, { zoom: DISCOVER_USER_ZOOM });
+  }, [userCoords, mapReady]);
 
   // Changing the filter has to re-query: the API does the filtering, so a new
   // chip means a new request around the viewport we are already looking at.
@@ -342,19 +376,12 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       }
       cameraBeforeFocus.current ??= mapRef.current?.getCamera() ?? null;
       suppressNextRefetch.current = true;
-      // On wide layouts the side panel covers the left of the canvas instead
-      // of the drawer covering the bottom, so the occlusion compensation
-      // flips from a vertical offset to a horizontal one: the visible map
-      // box runs from the panel's right gutter to the frame's right edge.
-      const wide = window.matchMedia(WIDE_MQ).matches;
-      const panelW = (stageRef.current?.clientWidth ?? 0) * PANEL_FRACTION;
       mapRef.current?.flyTo(poi.coords.lat, poi.coords.lng, {
         zoom: 17,
-        offsetX: wide ? (panelW + FRAME) / 2 : 0,
         offsetY: wide ? 0 : (cutoutTop - snapHeights[targetSnap] - FRAME) / 2,
       });
     },
-    [cutoutTop, snapHeights],
+    [cutoutTop, snapHeights, wide],
   );
 
   /**
@@ -440,12 +467,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) {
       return;
     }
-    mapRef.current?.flyTo(lat, lng, {
-      zoom: 16,
-      offsetX: window.matchMedia(WIDE_MQ).matches
-        ? ((stageRef.current?.clientWidth ?? 0) * PANEL_FRACTION + FRAME) / 2
-        : 0,
-    });
+    mapRef.current?.flyTo(lat, lng, { zoom: 16 });
     let cancelled = false;
     (async () => {
       const name = id.split(':').pop() || id;
@@ -608,15 +630,30 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
 
   return (
     <div ref={stageRef} className="relative h-full w-full overflow-hidden">
-      <div className="absolute inset-0">
+      <div
+        className={cn('absolute', wide ? 'shadow-e1 overflow-hidden rounded-xl' : 'inset-0')}
+        style={
+          wide
+            ? {
+                top: FRAME,
+                bottom: FRAME,
+                right: FRAME,
+                left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
+              }
+            : undefined
+        }>
         <MapView
           ref={mapRef}
           styleUrl={mapStyleUrl}
+          inset={mapInset}
           center={DISCOVER_DEFAULT_CENTER}
           zoom={DISCOVER_DEFAULT_ZOOM}
           markers={markers}
           selectedId={selectedId}
           onBoundsChange={handleBoundsChange}
+          onUserMove={() => {
+            userMoved.current = true;
+          }}
         />
       </div>
 
@@ -727,21 +764,10 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       {/*
         Tablet / desktop (md+): the results live in a fixed panel on the left
         instead of the bottom drawer — the drawer, its pill and the mobile
-        cutout are all mobile-only. The map stays full-bleed behind, framed
-        by the same rounded-cutout trick as on mobile (below); focus flights
-        land their target in the visible part (see focusOnPoi).
+        cutout are all mobile-only. The map is a sibling box rather than a
+        full-bleed canvas, so its centre and bounds are the ones the user
+        actually sees, with no offset to compensate.
        */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute z-10 hidden rounded-xl md:block"
-        style={{
-          top: FRAME,
-          left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
-          right: FRAME,
-          bottom: FRAME,
-          boxShadow: '0 0 0 9999px var(--m-surface)',
-        }}
-      />
 
       {/* The whole panel sits between the app background and the white
           chrome (surface2): header, chips and list share one colour, and

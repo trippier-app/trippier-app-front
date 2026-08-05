@@ -48,14 +48,26 @@ export interface MapViewHandle {
   getCamera: () => MapCamera | null;
 }
 
+/** Edges of the canvas hidden behind the app's chrome, in pixels. */
+export interface MapInset {
+  left?: number;
+  top?: number;
+  right?: number;
+  bottom?: number;
+}
+
 interface MapViewProps {
   /** MapTiler style URL resolved server-side; null when the key is unset. */
   styleUrl: string | null;
+  /** Occluded edges, so the reported viewport is the one the user can see. */
+  inset?: MapInset;
   center: { lat: number; lng: number };
   zoom: number;
   markers: MapMarker[];
   selectedId?: string;
   onBoundsChange: (bounds: MapBounds, center: { lat: number; lng: number }) => void;
+  /** Fires only on a real gesture, never on a programmatic camera move. */
+  onUserMove?: () => void;
   ref?: React.Ref<MapViewHandle>;
 }
 
@@ -101,11 +113,13 @@ function glyphForPoiType(type: PoiType): string {
  */
 export default function MapView({
   styleUrl,
+  inset,
   center,
   zoom,
   markers,
   selectedId,
   onBoundsChange,
+  onUserMove,
   ref,
 }: MapViewProps) {
   const mapRef = useRef<MapRef>(null);
@@ -134,18 +148,27 @@ export default function MapView({
     if (!map) {
       return;
     }
-    const bounds = map.getBounds();
-    const mapCenter = map.getCenter();
+    const canvas = map.getCanvas();
+    const left = inset?.left ?? 0;
+    const top = inset?.top ?? 0;
+    const right = canvas.clientWidth - (inset?.right ?? 0);
+    const bottom = canvas.clientHeight - (inset?.bottom ?? 0);
+    if (right <= left || bottom <= top) {
+      return;
+    }
+    const nw = map.unproject([left, top]);
+    const se = map.unproject([right, bottom]);
+    const visibleCenter = map.unproject([(left + right) / 2, (top + bottom) / 2]);
     onBoundsChange(
       {
-        neLat: bounds.getNorth(),
-        neLng: bounds.getEast(),
-        swLat: bounds.getSouth(),
-        swLng: bounds.getWest(),
+        neLat: Math.max(nw.lat, se.lat),
+        neLng: Math.max(nw.lng, se.lng),
+        swLat: Math.min(nw.lat, se.lat),
+        swLng: Math.min(nw.lng, se.lng),
       },
-      { lat: mapCenter.lat, lng: mapCenter.lng },
+      { lat: visibleCenter.lat, lng: visibleCenter.lng },
     );
-  }, [onBoundsChange]);
+  }, [onBoundsChange, inset]);
 
   if (!styleUrl) {
     return (
@@ -162,6 +185,11 @@ export default function MapView({
       mapStyle={styleUrl}
       attributionControl={false}
       onLoad={reportBounds}
+      onMoveStart={event => {
+        if (event.originalEvent) {
+          onUserMove?.();
+        }
+      }}
       onMoveEnd={reportBounds}
       style={{ width: '100%', height: '100%' }}>
       {markers.map(marker => {
