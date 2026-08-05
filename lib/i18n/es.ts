@@ -97,7 +97,6 @@ export const es: Dict = {
   account_signed_out: 'Sin sesión',
   account_sign_in: 'Iniciar sesión',
   account_sign_out: 'Cerrar sesión',
-  account_switch: 'Cambiar de cuenta',
   account_my_maps: 'Mis mapas',
   account_soon: 'pronto',
   account_guest: 'Invitado',

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useI18n, useT } from '@/components/I18nProvider';
-import { Languages, Layers, LogIn, LogOut, Repeat, User } from '@/components/icons';
+import { Languages, Layers, LogIn, LogOut, User } from '@/components/icons';
 import { cn } from '@/lib/cn';
 import { LANGUAGE_NAMES, LOCALES, type Locale } from '@/lib/i18n';
 
@@ -93,7 +93,6 @@ export default function AccountButton({ className }: AccountButtonProps) {
             </div>
 
             <MenuItem icon={<LogIn size={16} />} label={t('account_sign_in')} />
-            <MenuItem icon={<Repeat size={16} />} label={t('account_switch')} />
             <MenuItem icon={<LogOut size={16} />} label={t('account_sign_out')} />
             <MenuItem
               icon={<Layers size={16} />}

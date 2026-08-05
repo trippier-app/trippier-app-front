@@ -95,7 +95,6 @@ export const ja: Dict = {
   account_signed_out: '未ログイン',
   account_sign_in: 'ログイン',
   account_sign_out: 'ログアウト',
-  account_switch: 'アカウントを切り替え',
   account_my_maps: 'マイマップ',
   account_soon: '近日公開',
   account_guest: 'ゲスト',

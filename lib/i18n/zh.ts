@@ -90,7 +90,6 @@ export const zh: Dict = {
   account_signed_out: '未登录',
   account_sign_in: '登录',
   account_sign_out: '退出登录',
-  account_switch: '切换账户',
   account_my_maps: '我的地图',
   account_soon: '即将推出',
   account_guest: '访客',

@@ -94,7 +94,6 @@ export const ar: Dict = {
   account_signed_out: 'غير مسجَّل الدخول',
   account_sign_in: 'تسجيل الدخول',
   account_sign_out: 'تسجيل الخروج',
-  account_switch: 'تبديل الحساب',
   account_my_maps: 'خرائطي',
   account_soon: 'قريبًا',
   account_guest: 'زائر',

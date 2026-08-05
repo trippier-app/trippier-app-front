@@ -9,7 +9,7 @@ import { useT } from '@/components/I18nProvider';
 import { cn } from '@/lib/cn';
 import MapView, { type MapCamera, type MapMarker, type MapViewHandle } from '@/components/MapView';
 import PoiDetailScreen from '@/components/PoiDetailScreen';
-import PoiRow from '@/components/PoiRow';
+import PoiRow, { PoiRowSkeleton } from '@/components/PoiRow';
 import SearchBar from '@/components/SearchBar';
 import { ArrowLeft, MapPin, Search, X } from '@/components/icons';
 import {
@@ -524,18 +524,32 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     }
     const { id, lat, lng } = deepLink;
     const name = (id.split(':').pop() || id).toLowerCase();
+    // Merged records sit next to bare twins (a monument and the OSM node of
+    // its carousel share coordinates), so the name and proximity tiers pick
+    // the richest candidate — most sources, then a description — with the
+    // distance only breaking ties.
+    const nearness = (candidate: EnrichedPoi): number =>
+      candidate.coords
+        ? Math.hypot(candidate.coords.lat - lat, candidate.coords.lng - lng)
+        : Number.POSITIVE_INFINITY;
+    const richness = (candidate: EnrichedPoi): number =>
+      candidate.sources.length + (candidate.description ? 1 : 0);
+    const richest = (candidates: EnrichedPoi[]): EnrichedPoi | undefined =>
+      [...candidates].sort((a, b) => richness(b) - richness(a) || nearness(a) - nearness(b))[0];
     const pick = (candidates: EnrichedPoi[]): EnrichedPoi | undefined =>
       candidates.find(candidate => candidate.id === id) ??
-      candidates.find(candidate => candidate.name.toLowerCase() === name) ??
-      candidates.find(
-        candidate =>
-          candidate.coords !== undefined &&
-          Math.hypot(candidate.coords.lat - lat, candidate.coords.lng - lng) < DEEP_LINK_MATCH_DEG,
-      );
+      richest(candidates.filter(candidate => candidate.name.toLowerCase() === name)) ??
+      richest(candidates.filter(candidate => nearness(candidate) < DEEP_LINK_MATCH_DEG));
 
     let cancelled = false;
     (async () => {
+      // A partial answer often carries only a bare twin of the place (the
+      // provider holding the rich record timed out), so it never settles the
+      // search: the richest candidate seen so far is kept while wider or
+      // repeated attempts run, and only a complete answer with a match ends
+      // them.
       let best: EnrichedPoi | undefined;
+      let settled = false;
       for (const radius of DEEP_LINK_RADII_M) {
         for (let attempt = 0; attempt < DEEP_LINK_ATTEMPTS; attempt++) {
           let result;
@@ -548,16 +562,15 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
             return;
           }
           const match = pick(result.results);
-          if (match && !result.partial) {
+          if (match && (!best || richness(match) > richness(best))) {
             best = match;
-            break;
           }
-          best ??= match;
           if (!result.partial) {
+            settled = match !== undefined;
             break;
           }
         }
-        if (best) {
+        if (settled) {
           break;
         }
       }
@@ -687,6 +700,11 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
           />
         </div>
       ))}
+      {loading
+        ? Array.from({ length: visiblePois.length === 0 ? 6 : 3 }, (_, index) => (
+            <PoiRowSkeleton key={`skeleton-${index}`} />
+          ))
+        : null}
       {!loading && visiblePois.length === 0 ? (
         <p className="text-mute px-6 py-8 text-center font-mono text-[13px]">
           {tooFarOut

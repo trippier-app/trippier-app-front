@@ -118,3 +118,21 @@ export default function PoiRow({
     </div>
   );
 }
+
+/**
+ * Loading placeholder mirroring a row's layout. Rendered alone while the
+ * first results load, and appended under the rows already on screen while a
+ * refetch is in flight. Same breakpoint flip as the thumb: white sheet below
+ * md, surface2 panel above.
+ */
+export function PoiRowSkeleton() {
+  return (
+    <div className="flex animate-pulse items-center gap-3 rounded-lg px-3 py-2.5">
+      <span className="bg-surface2 size-10 shrink-0 rounded-md md:bg-surface" />
+      <span className="min-w-0 flex-1">
+        <span className="bg-surface2 block h-3.5 w-2/5 rounded-pill md:bg-surface" />
+        <span className="bg-surface2 mt-1.5 block h-3 w-3/5 rounded-pill md:bg-surface" />
+      </span>
+    </div>
+  );
+}

@@ -96,7 +96,6 @@ export const fr = {
   account_signed_out: 'Non connecté',
   account_sign_in: 'Se connecter',
   account_sign_out: 'Se déconnecter',
-  account_switch: 'Changer de compte',
   account_my_maps: 'Mes cartes',
   account_soon: 'bientôt',
   account_guest: 'Invité',
