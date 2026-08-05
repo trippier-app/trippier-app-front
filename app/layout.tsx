@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from 'next';
 import { Bricolage_Grotesque, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import AuthProvider from '@/components/AuthProvider';
+import CircleTransition from '@/components/CircleTransition';
 import I18nProvider from '@/components/I18nProvider';
+import MapsProvider from '@/components/MapsProvider';
 
 const bricolage = Bricolage_Grotesque({
   variable: '--font-bricolage',
@@ -41,7 +44,13 @@ export default function RootLayout({
   return (
     <html lang="fr" data-theme="light">
       <body className={`${bricolage.variable} ${jetbrainsMono.variable} antialiased`}>
-        <I18nProvider>{children}</I18nProvider>
+        <I18nProvider>
+          <AuthProvider>
+            <MapsProvider>
+              <CircleTransition>{children}</CircleTransition>
+            </MapsProvider>
+          </AuthProvider>
+        </I18nProvider>
       </body>
     </html>
   );

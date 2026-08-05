@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Bookmark,
   Calendar,
   Coffee,
   Compass,
@@ -21,6 +22,8 @@ interface PoiRowProps {
   type: PoiType;
   distanceMeters?: number;
   selected: boolean;
+  /** How many of the user's maps already hold this place; 0 hides the mark. */
+  savedCount?: number;
   onSelect: () => void;
   onZoom?: () => void;
 }
@@ -77,6 +80,7 @@ export default function PoiRow({
   type,
   distanceMeters,
   selected,
+  savedCount = 0,
   onSelect,
   onZoom,
 }: PoiRowProps) {
@@ -100,9 +104,19 @@ export default function PoiRow({
           <span className="text-ink block truncate text-[15px] font-semibold tracking-tight">
             {name}
           </span>
-          <span className="text-mute block truncate font-mono text-[11.5px]">
-            {meta}
-            {distanceMeters !== undefined ? ` · ${formatDistance(distanceMeters, t)}` : ''}
+          <span className="flex items-center gap-1.5">
+            <span className="text-mute min-w-0 truncate font-mono text-[11.5px]">
+              {meta}
+              {distanceMeters !== undefined ? ` · ${formatDistance(distanceMeters, t)}` : ''}
+            </span>
+            {savedCount > 0 ? (
+              // Sized to sit inside the meta line's own box, so marking a row
+              // as saved never changes the row's height.
+              <span className="bg-emerald text-on-emerald flex shrink-0 items-center gap-1 rounded-pill px-1.5 py-0.5 text-[10px] leading-[13px] font-semibold">
+                <Bookmark size={10} />
+                {t(savedCount === 1 ? 'maps_saved_in_one' : 'maps_saved_in', { count: savedCount })}
+              </span>
+            ) : null}
           </span>
         </span>
       </button>

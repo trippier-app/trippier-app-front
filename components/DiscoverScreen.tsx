@@ -4,12 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
 import AccountButton from '@/components/AccountButton';
+import { useCircleTransition } from '@/components/CircleTransition';
 import Chip from '@/components/Chip';
 import { useT } from '@/components/I18nProvider';
+import { useMaps } from '@/components/MapsProvider';
 import { cn } from '@/lib/cn';
 import MapView, { type MapCamera, type MapMarker, type MapViewHandle } from '@/components/MapView';
 import PoiDetailScreen from '@/components/PoiDetailScreen';
 import PoiRow, { PoiRowSkeleton } from '@/components/PoiRow';
+import SourceChips from '@/components/SourceChips';
 import SearchBar from '@/components/SearchBar';
 import { ArrowLeft, MapPin, Search, X } from '@/components/icons';
 import {
@@ -23,7 +26,7 @@ import {
   radiusFromBounds,
   type MapBounds,
 } from '@/lib/discover';
-import { searchPois, type EnrichedPoi } from '@/lib/pois';
+import { poiKey, searchPois, streamPois, type EnrichedPoi } from '@/lib/pois';
 
 type SnapIndex = 0 | 1 | 2 | 3;
 
@@ -36,12 +39,6 @@ const FETCH_LIMIT = 30;
  * feeling responsive once the user stops moving the map.
  */
 const REFETCH_MS = 500;
-/**
- * Delay before the single quiet retry of a search whose merge came back
- * partial *and* empty. Partial responses are not cached upstream, so a
- * second attempt can catch the providers on a better beat.
- */
-const PARTIAL_RETRY_MS = 2500;
 /**
  * Escalating radii for the searches re-resolving a shared `?poi=` deep link.
  * The API has no by-id lookup, so the shared coordinates are searched and
@@ -109,6 +106,27 @@ function readDeepLink(params: URLSearchParams): DeepLink | null {
 }
 
 /**
+ * Best readable name an identifier can offer on its own.
+ *
+ * A stable identity spells the place out in one of its two forms
+ * (`geo:<name>@<lat>,<lng>`) but not the other (`wd:Q243`), and a legacy
+ * provider id keeps it in its last segment. Nothing readable is better than
+ * a Wikidata number: the skeleton covers the gap until the place resolves.
+ *
+ * @param id - The identifier carried by the link.
+ * @returns A display name, or an empty string when the id holds none.
+ */
+function nameFromId(id: string): string {
+  if (id.startsWith('wd:')) {
+    return '';
+  }
+  if (id.startsWith('geo:')) {
+    return id.slice(4).split('@')[0];
+  }
+  return id.split(':').pop() ?? '';
+}
+
+/**
  * Minimal place standing in for a shared link while it resolves, and the
  * fallback when it cannot be resolved at all.
  *
@@ -118,7 +136,8 @@ function readDeepLink(params: URLSearchParams): DeepLink | null {
 function placeFromLink({ id, lat, lng }: DeepLink): EnrichedPoi {
   return {
     id,
-    name: id.split(':').pop() || id,
+    stable_id: id,
+    name: nameFromId(id),
     type: '',
     score: 0,
     distance: 0,
@@ -128,7 +147,7 @@ function placeFromLink({ id, lat, lng }: DeepLink): EnrichedPoi {
 }
 
 function detailQueryFor(poi: EnrichedPoi): string {
-  const params = new URLSearchParams({ poi: poi.id });
+  const params = new URLSearchParams({ poi: poiKey(poi) });
   if (poi.coords) {
     params.set('lat', String(poi.coords.lat));
     params.set('lng', String(poi.coords.lng));
@@ -165,12 +184,25 @@ interface DiscoverScreenProps {
 
 export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   const t = useT();
+  const { mapsHolding } = useMaps();
   const searchParams = useSearchParams();
   const [deepLink] = useState(() => readDeepLink(new URLSearchParams(searchParams.toString())));
+  // A fade-mode change is a move between two map screens: the panel dips out
+  // and the camera pulls back to the default view, so the arriving screen —
+  // which opens on that same view — takes over without a visible jump.
+  const { phase: transitionPhase, mode: transitionMode } = useCircleTransition();
+  const leaving = transitionPhase === 'covering' && transitionMode === 'fade';
+  useEffect(() => {
+    if (leaving) {
+      mapRef.current?.flyTo(DISCOVER_DEFAULT_CENTER.lat, DISCOVER_DEFAULT_CENTER.lng, {
+        zoom: DISCOVER_DEFAULT_ZOOM,
+      });
+    }
+  }, [leaving]);
+
   const stageRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapViewHandle>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<AbortController | null>(null);
   const userMoved = useRef(false);
   const flewToUser = useRef(false);
@@ -194,6 +226,8 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [tooFarOut, setTooFarOut] = useState(false);
   const [partialResults, setPartialResults] = useState(false);
+  const [pendingSources, setPendingSources] = useState<string[]>([]);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>();
@@ -258,53 +292,54 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   }, [snap, snapHeights, drawerH]);
 
   /**
-   * Issues the POI search through the Next proxy.
+   * Streams the POI search through the Next proxy.
    *
-   * Older in-flight requests are aborted before a new one starts, so a slow
-   * earlier response cannot overwrite a fresher one.
+   * Each frame is the whole result as it then stood, so the list is replaced
+   * rather than merged here — the providers revise each other, and reconciling
+   * that client-side would mean duplicating the server's dedup rules. Older
+   * streams are aborted before a new one starts, so a slow earlier search
+   * cannot paint over a fresher one.
    */
   const loadPois = useCallback(
     async (lat: number, lng: number, radius: number, types: (typeof activeChip)['types']) => {
-      async function run(attempt: number): Promise<void> {
-        inflight.current?.abort();
-        if (retryTimer.current) {
-          clearTimeout(retryTimer.current);
-          retryTimer.current = null;
-        }
-        const controller = new AbortController();
-        inflight.current = controller;
+      inflight.current?.abort();
+      const controller = new AbortController();
+      inflight.current = controller;
 
-        setLoading(true);
-        setErrorMessage(null);
-        try {
-          const result = await searchPois(
-            { lat, lng, radius, limit: FETCH_LIMIT, types },
-            controller.signal,
-          );
-          setPois([...result.results].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)));
-          setPartialResults(result.partial ?? false);
-          // An empty *partial* merge usually means a provider timed out, not
-          // that the area is empty — retry once, quietly.
-          if (result.partial && result.results.length === 0 && attempt === 0) {
-            retryTimer.current = setTimeout(() => {
-              run(1);
-            }, PARTIAL_RETRY_MS);
-          }
-        } catch (error) {
-          if (controller.signal.aborted) {
-            return;
-          }
-          setErrorMessage(error instanceof Error ? error.message : t('results_error'));
-        } finally {
-          if (inflight.current === controller) {
-            inflight.current = null;
-          }
-          if (!controller.signal.aborted) {
+      setLoading(true);
+      setErrorMessage(null);
+      setFailedSources([]);
+      try {
+        await streamPois(
+          { lat, lng, radius, limit: FETCH_LIMIT, types },
+          frame => {
+            setPois(frame.results);
+            setPartialResults(frame.partial);
+            setPendingSources(frame.pending);
+            setFailedSources(frame.failed);
+            // Results are on screen from the first frame; only the wait for
+            // the very first one is a loading state.
             setLoading(false);
-          }
+          },
+          controller.signal,
+        );
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setErrorMessage(error instanceof Error ? error.message : t('results_error'));
+      } finally {
+        if (inflight.current === controller) {
+          inflight.current = null;
+        }
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setPartialResults(false);
+          // Nothing is awaited once the stream closes, but the sources that
+          // gave up stay listed: they are why the list is short.
+          setPendingSources([]);
         }
       }
-      await run(0);
     },
     [t],
   );
@@ -319,6 +354,8 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       if (farOut) {
         setPois([]);
         setLoading(false);
+        setPendingSources([]);
+        setFailedSources([]);
         return;
       }
       refetchTimer.current = setTimeout(() => {
@@ -390,9 +427,6 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       if (refetchTimer.current) {
         clearTimeout(refetchTimer.current);
       }
-      if (retryTimer.current) {
-        clearTimeout(retryTimer.current);
-      }
       inflight.current?.abort();
     },
     [],
@@ -423,7 +457,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
    */
   const focusOnPoi = useCallback(
     (poi: EnrichedPoi, targetSnap: Exclude<SnapIndex, 0>) => {
-      setSelectedId(poi.id);
+      setSelectedId(poiKey(poi));
       setSnap(targetSnap);
       if (!poi.coords) {
         return;
@@ -474,7 +508,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
 
   /** Opens a place's detail overlay and mirrors it into the URL. */
   const openDetail = useCallback((poi: EnrichedPoi) => {
-    setSelectedId(poi.id);
+    setSelectedId(poiKey(poi));
     setDetailPoi(poi);
     window.history.pushState(null, '', detailQueryFor(poi));
   }, []);
@@ -498,9 +532,9 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
         setDetailPoi(null);
         return;
       }
-      const poi = pois.find(candidate => candidate.id === id);
+      const poi = pois.find(candidate => poiKey(candidate) === id || candidate.id === id);
       if (poi) {
-        setSelectedId(poi.id);
+        setSelectedId(poiKey(poi));
         setDetailPoi(poi);
       }
     };
@@ -523,7 +557,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       return;
     }
     const { id, lat, lng } = deepLink;
-    const name = (id.split(':').pop() || id).toLowerCase();
+    const name = nameFromId(id).toLowerCase();
     // Merged records sit next to bare twins (a monument and the OSM node of
     // its carousel share coordinates), so the name and proximity tiers pick
     // the richest candidate — most sources, then a description — with the
@@ -537,8 +571,9 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     const richest = (candidates: EnrichedPoi[]): EnrichedPoi | undefined =>
       [...candidates].sort((a, b) => richness(b) - richness(a) || nearness(a) - nearness(b))[0];
     const pick = (candidates: EnrichedPoi[]): EnrichedPoi | undefined =>
+      candidates.find(candidate => poiKey(candidate) === id) ??
       candidates.find(candidate => candidate.id === id) ??
-      richest(candidates.filter(candidate => candidate.name.toLowerCase() === name)) ??
+      (name ? richest(candidates.filter(c => c.name.toLowerCase() === name)) : undefined) ??
       richest(candidates.filter(candidate => nearness(candidate) < DEEP_LINK_MATCH_DEG));
 
     let cancelled = false;
@@ -578,7 +613,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
         return;
       }
       if (best) {
-        setSelectedId(best.id);
+        setSelectedId(poiKey(best));
         setDetailPoi(best);
       } else {
         setSelectedId(id);
@@ -611,13 +646,13 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       visiblePois
         .filter(poi => poi.coords && !poi.coords.approximate)
         .map(poi => ({
-          id: poi.id,
+          id: poiKey(poi),
           lat: poi.coords!.lat,
           lng: poi.coords!.lng,
           type: poi.type,
           onSelect: () => {
             focusOnPoi(poi, 2);
-            scrollRowIntoView(poi.id);
+            scrollRowIntoView(poiKey(poi));
           },
         })),
     [visiblePois, focusOnPoi, scrollRowIntoView],
@@ -675,16 +710,19 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     </div>
   );
 
+  const sourceChips = <SourceChips pending={pendingSources} failed={failedSources} />;
+
   const resultsRows = (
     <>
       {visiblePois.map(poi => (
-        <div key={poi.id} data-poi-id={poi.id}>
+        <div key={poiKey(poi)} data-poi-id={poiKey(poi)}>
           <PoiRow
             name={poi.name}
             meta={formatPoiMeta(poi, t(activeChip.labelKey), t)}
             type={poi.type}
             distanceMeters={poi.distance}
-            selected={poi.id === selectedId}
+            selected={poiKey(poi) === selectedId}
+            savedCount={mapsHolding(poiKey(poi)).length}
             onSelect={() => openDetail(poi)}
             onZoom={
               poi.coords
@@ -846,6 +884,8 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
 
         {resultsChips}
 
+        {sourceChips}
+
         <div
           className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2"
           style={{ paddingBottom: TABBAR_RESERVED }}>
@@ -866,7 +906,10 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
           the docked tab bar plus the floating pills read against it. */}
       <section
         aria-label={t('results_label')}
-        className="bg-surface2 shadow-e2 absolute z-20 hidden flex-col overflow-hidden rounded-xl md:flex"
+        className={cn(
+          'bg-surface2 shadow-e2 absolute z-20 hidden flex-col overflow-hidden rounded-xl transition-opacity duration-300 md:flex',
+          leaving && 'opacity-0',
+        )}
         style={{ top: FRAME, bottom: FRAME, left: FRAME, width: `${PANEL_FRACTION * 100}%` }}>
         <div className="px-3 pt-3 pb-2">
           <SearchBar
@@ -906,6 +949,8 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
 
         {resultsChips}
 
+        {sourceChips}
+
         <div
           className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pt-2"
           style={{ paddingBottom: TABBAR_RESERVED }}>
@@ -919,7 +964,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       <AnimatePresence>
         {detailPoi ? (
           <PoiDetailScreen
-            key={detailPoi.id}
+            key={poiKey(detailPoi)}
             poi={detailPoi}
             pending={detailPending}
             mapStyleUrl={mapStyleUrl}

@@ -60,6 +60,13 @@ export interface SourceLink {
 /** Final merged + scored POI returned by `/v1/pois/search`. */
 export interface EnrichedPoi {
   id: string;
+  /**
+   * Identity of the place rather than of the record. `id` belongs to whichever
+   * provider won the merge, so it changes when a better-ranked provider joins
+   * — visible while streaming, where a place is sent once before that provider
+   * lands and again after. Key on this.
+   */
+  stable_id?: string;
   name: string;
   kind?: PointKind;
   type: PoiType;
@@ -84,6 +91,73 @@ export interface SearchResult {
    * the area is actually empty.
    */
   partial?: boolean;
+}
+
+/** One revision of a streamed search: the whole result as it then stood. */
+export interface SearchFrame {
+  frame: number;
+  partial: boolean;
+  /** Providers still being awaited. */
+  pending: string[];
+  /** Providers that gave up, so a thin result is explainable. */
+  failed: string[];
+  total: number;
+  results: EnrichedPoi[];
+}
+
+/**
+ * Identity to key a place on, preferring the one that survives a merge.
+ *
+ * @param poi - The place.
+ * @returns Its stable identity, falling back to the record id.
+ */
+export function poiKey(poi: Pick<EnrichedPoi, 'id' | 'stable_id'>): string {
+  return poi.stable_id || poi.id;
+}
+
+/**
+ * Runs a search as a stream, handing each revision of the result to `onFrame`
+ * as the API sends it.
+ *
+ * Fast providers answer in under a second and slow ones take twenty; a single
+ * response has to cut somewhere, and it always cut before the slow ones. Here
+ * the first frame paints straight away and later frames revise it in place.
+ *
+ * @param params - Search parameters (`lat` / `lng` required).
+ * @param onFrame - Called for every revision, in order.
+ * @param signal - Aborts the stream when the caller moves on.
+ * @throws When the proxy or the upstream API refuses the request.
+ */
+export async function streamPois(
+  params: RadiusSearchParams,
+  onFrame: (frame: SearchFrame) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`/api/pois?${toQuery(params)}&stream=true`, { signal });
+  if (!response.ok || !response.body) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `POI search failed (${response.status})`);
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += value;
+    // A read can land mid-line, so only whole lines are parsed and the
+    // remainder waits for the next chunk.
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+      onFrame(JSON.parse(line) as SearchFrame);
+    }
+  }
 }
 
 /** Parameters accepted by the radius search endpoints. */

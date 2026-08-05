@@ -17,6 +17,8 @@ import {
   Share,
 } from '@/components/icons';
 import { useT } from '@/components/I18nProvider';
+import { useMaps } from '@/components/MapsProvider';
+import { SaveToMapSheetHost } from '@/components/SaveToMapSheet';
 import { cn } from '@/lib/cn';
 import { poiTypeKey } from '@/lib/discover';
 import type { TranslateFn } from '@/lib/i18n';
@@ -27,7 +29,7 @@ import {
   toPreviewUrl,
   type PoiSourceLink,
 } from '@/lib/poiSources';
-import type { EnrichedPoi, PoiContact, PoiType } from '@/lib/pois';
+import { poiKey, type EnrichedPoi, type PoiContact, type PoiType } from '@/lib/pois';
 
 /**
  * Geometry constants mirrored from the Discover screen. The hero media keeps
@@ -479,6 +481,9 @@ export default function PoiDetailScreen({
 }: PoiDetailScreenProps) {
   const t = useT();
   const wide = useIsWide();
+  const { mapsHolding } = useMaps();
+  const [savingOpen, setSavingOpen] = useState(false);
+  const savedCount = mapsHolding(poiKey(poi)).length;
   const rootRef = useRef<HTMLDivElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
   const [rootH, setRootH] = useState(0);
@@ -735,20 +740,37 @@ export default function PoiDetailScreen({
         </button>
       </div>
 
-      <div className="bg-surface absolute inset-x-0 bottom-0 flex gap-2.5 px-[18px] pt-3 pb-5">
+      {/* Both buttons stand 56px tall, the height of the tab bar's pill, and
+          land on its exact level. Below md that means the bar's own 20px
+          offset; above it the bar clears 2×FRAME from the viewport while this
+          row sits in the map box, which already holds FRAME back — leaving
+          one FRAME to make up. */}
+      <div className="bg-surface absolute inset-x-0 bottom-0 flex gap-2.5 px-[18px] pt-3 pb-5 md:pb-3">
         <button
           type="button"
-          className="border-line bg-surface text-ink flex flex-1 items-center justify-center gap-[9px] rounded-pill border-[1.5px] py-[15px] text-[15px] font-semibold tracking-[-0.1px]">
+          className="border-line bg-surface text-ink flex h-[56px] flex-1 items-center justify-center gap-[9px] rounded-pill border-[1.5px] text-[15px] font-semibold tracking-[-0.1px]">
           <MapPin size={17} />
           {t('detail_directions')}
         </button>
         <button
           type="button"
-          className="bg-emerald text-on-emerald flex flex-[1.3] items-center justify-center gap-[9px] rounded-pill py-[15px] text-[15px] font-semibold tracking-[-0.1px]">
+          onClick={() => setSavingOpen(true)}
+          className={cn(
+            'flex h-[56px] flex-[1.3] items-center justify-center gap-[9px] rounded-pill text-[15px] font-semibold tracking-[-0.1px] transition-colors',
+            savedCount > 0
+              ? 'bg-emerald-soft text-emerald-deep'
+              : 'bg-emerald text-on-emerald hover:bg-emerald-deep',
+          )}>
           <Bookmark size={17} />
-          {t('detail_save')}
+          <span className="truncate">
+            {savedCount === 0
+              ? t('detail_save')
+              : t(savedCount === 1 ? 'maps_saved_in_one' : 'maps_saved_in', { count: savedCount })}
+          </span>
         </button>
       </div>
+
+      <SaveToMapSheetHost poi={poi} open={savingOpen} onClose={() => setSavingOpen(false)} />
     </motion.div>
   );
 }
