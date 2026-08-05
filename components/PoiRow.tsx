@@ -10,7 +10,9 @@ import {
   Star,
   Wallet,
 } from '@/components/icons';
+import { useT } from '@/components/I18nProvider';
 import { cn } from '@/lib/cn';
+import type { TranslateFn } from '@/lib/i18n';
 import type { PoiType } from '@/lib/pois';
 
 interface PoiRowProps {
@@ -56,8 +58,10 @@ function PoiTypeIcon({ type, size }: { type: PoiType; size: number }) {
  * @param meters - Distance from the search center, in metres.
  * @returns A short label such as "420 m" or "1.4 km".
  */
-function formatDistance(meters: number): string {
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+function formatDistance(meters: number, t: TranslateFn): string {
+  return meters < 1000
+    ? `${Math.round(meters)} ${t('unit_m')}`
+    : `${(meters / 1000).toFixed(1)} ${t('unit_km')}`;
 }
 
 /**
@@ -76,6 +80,7 @@ export default function PoiRow({
   onSelect,
   onZoom,
 }: PoiRowProps) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -97,7 +102,7 @@ export default function PoiRow({
           </span>
           <span className="text-mute block truncate font-mono text-[11.5px]">
             {meta}
-            {distanceMeters !== undefined ? ` · ${formatDistance(distanceMeters)}` : ''}
+            {distanceMeters !== undefined ? ` · ${formatDistance(distanceMeters, t)}` : ''}
           </span>
         </span>
       </button>
@@ -105,7 +110,7 @@ export default function PoiRow({
         <button
           type="button"
           onClick={onZoom}
-          aria-label={`Zoom to ${name}`}
+          aria-label={t('row_zoom_to', { name })}
           className="text-ink2 hover:bg-surface3 hover:text-ink flex size-9 shrink-0 items-center justify-center rounded-pill transition-colors">
           <Crosshair size={17} />
         </button>

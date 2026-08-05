@@ -1,8 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { AnimatePresence, animate, motion, useMotionValue, useTransform } from 'framer-motion';
+import AccountButton from '@/components/AccountButton';
 import Chip from '@/components/Chip';
+import { useT } from '@/components/I18nProvider';
 import { cn } from '@/lib/cn';
 import MapView, { type MapCamera, type MapMarker, type MapViewHandle } from '@/components/MapView';
 import PoiDetailScreen from '@/components/PoiDetailScreen';
@@ -46,6 +49,10 @@ const PARTIAL_RETRY_MS = 2500;
  * hence the retry at a wider radius before giving up on enrichment.
  */
 const DEEP_LINK_RADII_M = [1000, 3000];
+/** Attempts per radius, so a partial merge gets a second, fuller chance. */
+const DEEP_LINK_ATTEMPTS = 2;
+/** Coordinate slack, in degrees (~85 m), for the proximity fallback. */
+const DEEP_LINK_MATCH_DEG = 0.00077;
 /** Height of the floating search bar, plus the gap under it. */
 const SEARCH_BAR_H = 52;
 const FRAME = 12;
@@ -79,6 +86,47 @@ const DRAWER_EASE = [0.4, 0, 0.2, 1] as const;
  * @param poi - The place to link to.
  * @returns A `?poi=…` query string for the current pathname.
  */
+interface DeepLink {
+  id: string;
+  lat: number;
+  lng: number;
+}
+
+/**
+ * Reads the shared-place parameters off the URL.
+ *
+ * @param params - The current query string.
+ * @returns The deep link, or null when the URL carries none.
+ */
+function readDeepLink(params: URLSearchParams): DeepLink | null {
+  const id = params.get('poi');
+  const lat = Number(params.get('lat'));
+  const lng = Number(params.get('lng'));
+  if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+  return { id, lat, lng };
+}
+
+/**
+ * Minimal place standing in for a shared link while it resolves, and the
+ * fallback when it cannot be resolved at all.
+ *
+ * @param link - The shared place parameters.
+ * @returns A place carrying only what the link itself states.
+ */
+function placeFromLink({ id, lat, lng }: DeepLink): EnrichedPoi {
+  return {
+    id,
+    name: id.split(':').pop() || id,
+    type: '',
+    score: 0,
+    distance: 0,
+    coords: { lat, lng, approximate: false },
+    sources: [],
+  };
+}
+
 function detailQueryFor(poi: EnrichedPoi): string {
   const params = new URLSearchParams({ poi: poi.id });
   if (poi.coords) {
@@ -116,6 +164,9 @@ interface DiscoverScreenProps {
 }
 
 export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
+  const t = useT();
+  const searchParams = useSearchParams();
+  const [deepLink] = useState(() => readDeepLink(new URLSearchParams(searchParams.toString())));
   const stageRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapViewHandle>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,9 +197,12 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | undefined>();
-  const [detailPoi, setDetailPoi] = useState<EnrichedPoi | null>(null);
+  const [detailPoi, setDetailPoi] = useState<EnrichedPoi | null>(() =>
+    deepLink ? placeFromLink(deepLink) : null,
+  );
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [detailPending, setDetailPending] = useState(() => deepLink !== null);
 
   const drawerH = useMotionValue(0);
   // The cutout stops one frame-width short of the drawer, so the white band
@@ -240,7 +294,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
           if (controller.signal.aborted) {
             return;
           }
-          setErrorMessage(error instanceof Error ? error.message : 'Could not reach the POI API');
+          setErrorMessage(error instanceof Error ? error.message : t('results_error'));
         } finally {
           if (inflight.current === controller) {
             inflight.current = null;
@@ -252,7 +306,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       }
       await run(0);
     },
-    [],
+    [t],
   );
 
   const scheduleRefetch = useCallback(
@@ -428,6 +482,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   /** Closes the detail overlay and strips the deep link from the URL. */
   const closeDetail = useCallback(() => {
     setDetailPoi(null);
+    setDetailPending(false);
     if (new URLSearchParams(window.location.search).has('poi')) {
       window.history.replaceState(null, '', window.location.pathname);
     }
@@ -453,60 +508,75 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [pois]);
 
-  // Shared `?poi=` deep link: bring the map to the shared coordinates and
-  // open the place's detail directly — no need to go through the search side
-  // first. The place is re-resolved by searching around the coordinates at
-  // escalating radii, matching by id and then by name (the id's last segment
-  // carries it); if everything fails, a minimal place is synthesised from the
-  // link itself so the detail page still opens.
+  // Shared `?poi=` deep link: the detail is already open in a pending state
+  // (seeded from the URL at render time), and only once the place resolves
+  // does the camera move — a link should not start by flying the map around
+  // an empty screen.
+  //
+  // Ids are not stable: which provider wins the merge depends on who answered
+  // in time, so a shared id can vanish from a later response. Resolution
+  // therefore falls back from id to name to plain proximity, and a partial
+  // merge is retried because it is exactly what strips a place of its
+  // enrichment — the same POI comes back with one source instead of three.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get('poi');
-    const lat = Number(params.get('lat'));
-    const lng = Number(params.get('lng'));
-    if (!id || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (!deepLink) {
       return;
     }
-    mapRef.current?.flyTo(lat, lng, { zoom: 16 });
+    const { id, lat, lng } = deepLink;
+    const name = (id.split(':').pop() || id).toLowerCase();
+    const pick = (candidates: EnrichedPoi[]): EnrichedPoi | undefined =>
+      candidates.find(candidate => candidate.id === id) ??
+      candidates.find(candidate => candidate.name.toLowerCase() === name) ??
+      candidates.find(
+        candidate =>
+          candidate.coords !== undefined &&
+          Math.hypot(candidate.coords.lat - lat, candidate.coords.lng - lng) < DEEP_LINK_MATCH_DEG,
+      );
+
     let cancelled = false;
     (async () => {
-      const name = id.split(':').pop() || id;
+      let best: EnrichedPoi | undefined;
       for (const radius of DEEP_LINK_RADII_M) {
-        try {
-          const result = await searchPois({ lat, lng, radius, limit: FETCH_LIMIT });
-          const match =
-            result.results.find(candidate => candidate.id === id) ??
-            result.results.find(candidate => candidate.name.toLowerCase() === name.toLowerCase());
+        for (let attempt = 0; attempt < DEEP_LINK_ATTEMPTS; attempt++) {
+          let result;
+          try {
+            result = await searchPois({ lat, lng, radius, limit: FETCH_LIMIT });
+          } catch {
+            continue;
+          }
           if (cancelled) {
             return;
           }
-          if (match) {
-            setSelectedId(match.id);
-            setDetailPoi(match);
-            return;
+          const match = pick(result.results);
+          if (match && !result.partial) {
+            best = match;
+            break;
           }
-        } catch {
-          // Provider hiccup — fall through to the wider radius.
+          best ??= match;
+          if (!result.partial) {
+            break;
+          }
         }
-        if (cancelled) {
-          return;
+        if (best) {
+          break;
         }
       }
-      setSelectedId(id);
-      setDetailPoi({
-        id,
-        name,
-        type: '',
-        score: 0,
-        distance: 0,
-        coords: { lat, lng, approximate: false },
-        sources: [],
-      });
+      if (cancelled) {
+        return;
+      }
+      if (best) {
+        setSelectedId(best.id);
+        setDetailPoi(best);
+      } else {
+        setSelectedId(id);
+      }
+      setDetailPending(false);
+      mapRef.current?.flyTo(lat, lng, { zoom: 16 });
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [deepLink]);
 
   /**
    * Brings a place's row into view in whichever results list is visible —
@@ -541,11 +611,12 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
   );
 
   const headerMeta = tooFarOut
-    ? 'Zoom in to see places'
+    ? t('results_zoom_in')
     : (errorMessage ??
       (loading
-        ? 'Looking around you…'
-        : `${visiblePois.length} places in this area${partialResults ? ' · some sources are slow' : ''}`));
+        ? t('results_looking')
+        : t('results_count', { count: visiblePois.length }) +
+          (partialResults ? ` · ${t('results_sources_slow')}` : '')));
 
   /** Picks the snap whose height is closest to where the drag was released. */
   const commitSnap = useCallback(
@@ -570,7 +641,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     <header className="flex items-start justify-between gap-3 px-5 pb-2">
       <div className="min-w-0">
         <h2 className="text-ink text-[22px] font-bold tracking-tight">
-          In this area
+          {t('results_title')}
           <span className="bg-emerald ml-1 inline-block size-1.5 rounded-pill align-middle" />
         </h2>
         <p className="text-mute mt-1 truncate font-mono text-[12.5px]">{headerMeta}</p>
@@ -583,7 +654,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       {DISCOVER_CHIPS.map(chip => (
         <Chip
           key={chip.id}
-          label={chip.label}
+          label={t(chip.labelKey)}
           active={chipId === chip.id}
           onClick={() => setChipId(chip.id)}
         />
@@ -597,7 +668,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
         <div key={poi.id} data-poi-id={poi.id}>
           <PoiRow
             name={poi.name}
-            meta={formatPoiMeta(poi, activeChip.label)}
+            meta={formatPoiMeta(poi, t(activeChip.labelKey), t)}
             type={poi.type}
             distanceMeters={poi.distance}
             selected={poi.id === selectedId}
@@ -619,10 +690,10 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       {!loading && visiblePois.length === 0 ? (
         <p className="text-mute px-6 py-8 text-center font-mono text-[13px]">
           {tooFarOut
-            ? "You're too zoomed out — pinch in and we'll surface places around you."
+            ? t('results_empty_far')
             : partialResults
-              ? 'Our sources are answering slowly right now — retrying in a moment…'
-              : 'No place matches this view yet — try a different filter or move the map.'}
+              ? t('results_empty_slow')
+              : t('results_empty')}
         </p>
       ) : null}
     </>
@@ -696,7 +767,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
             open ? (
               <button
                 type="button"
-                aria-label="Back to the map"
+                aria-label={t('search_back_map')}
                 onClick={closeDrawer}
                 className="flex size-full items-center justify-center">
                 <ArrowLeft size={20} />
@@ -706,15 +777,18 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
             )
           }
           trailing={
-            isFull ? (
-              <button
-                type="button"
-                aria-label="Close results"
-                onClick={closeDrawer}
-                className="bg-emerald text-on-emerald flex size-8 items-center justify-center rounded-pill">
-                <X size={14} />
-              </button>
-            ) : undefined
+            <>
+              {isFull ? (
+                <button
+                  type="button"
+                  aria-label={t('search_close_results')}
+                  onClick={closeDrawer}
+                  className="bg-emerald text-on-emerald flex size-8 items-center justify-center rounded-pill">
+                  <X size={14} />
+                </button>
+              ) : null}
+              <AccountButton />
+            </>
           }
         />
       </div>
@@ -731,7 +805,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
       ) : null}
 
       <motion.section
-        aria-label="Results"
+        aria-label={t('results_label')}
         style={{ height: drawerH }}
         className="bg-surface shadow-e3 absolute inset-x-3 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-xl md:hidden"
         // The drawer is inert when collapsed so the map keeps every gesture.
@@ -773,7 +847,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
           chrome (surface2): header, chips and list share one colour, and
           the docked tab bar plus the floating pills read against it. */}
       <section
-        aria-label="Results"
+        aria-label={t('results_label')}
         className="bg-surface2 shadow-e2 absolute z-20 hidden flex-col overflow-hidden rounded-xl md:flex"
         style={{ top: FRAME, bottom: FRAME, left: FRAME, width: `${PANEL_FRACTION * 100}%` }}>
         <div className="px-3 pt-3 pb-2">
@@ -784,7 +858,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
               selectedId ? (
                 <button
                   type="button"
-                  aria-label="Back to the area view"
+                  aria-label={t('search_back_area')}
                   onClick={resetFocus}
                   className="flex size-full items-center justify-center">
                   <ArrowLeft size={20} />
@@ -794,15 +868,18 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
               )
             }
             trailing={
-              query ? (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  onClick={() => setQuery('')}
-                  className="text-mute hover:text-ink flex size-8 items-center justify-center">
-                  <X size={16} />
-                </button>
-              ) : undefined
+              <>
+                {query ? (
+                  <button
+                    type="button"
+                    aria-label={t('search_clear')}
+                    onClick={() => setQuery('')}
+                    className="text-mute hover:text-ink flex size-8 items-center justify-center">
+                    <X size={16} />
+                  </button>
+                ) : null}
+                <AccountButton />
+              </>
             }
           />
         </div>
@@ -826,6 +903,7 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
           <PoiDetailScreen
             key={detailPoi.id}
             poi={detailPoi}
+            pending={detailPending}
             mapStyleUrl={mapStyleUrl}
             onClose={closeDetail}
           />

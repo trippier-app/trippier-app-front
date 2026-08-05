@@ -1,5 +1,6 @@
 'use client';
 
+import { useT } from '@/components/I18nProvider';
 import { cn } from '@/lib/cn';
 
 interface SearchBarProps {
@@ -30,11 +31,13 @@ export default function SearchBar({
   value,
   onValueChange,
   onFocus,
-  placeholder = 'Discover new places',
+  placeholder,
   leading,
   trailing,
   className,
 }: SearchBarProps) {
+  const t = useT();
+  const label = placeholder ?? t('search_placeholder');
   return (
     <div
       className={cn(
@@ -49,11 +52,11 @@ export default function SearchBar({
         value={value}
         onChange={event => onValueChange(event.target.value)}
         onFocus={onFocus}
-        placeholder={placeholder}
-        aria-label={placeholder}
+        placeholder={label}
+        aria-label={label}
         className="text-ink placeholder:text-mute min-w-0 flex-1 bg-transparent text-[15px] outline-none"
       />
-      {trailing ? <span className="flex shrink-0 items-center">{trailing}</span> : null}
+      {trailing ? <span className="flex shrink-0 items-center gap-1">{trailing}</span> : null}
     </div>
   );
 }
