@@ -1,18 +1,20 @@
 import type { EnrichedPoi, PoiType } from '@/lib/pois';
 
 /**
- * Default map center used for the very first render — Barcelona, Plaça de
- * Catalunya. As soon as the user moves the map the visible bounds drive the
- * POI fetch, so this only matters on cold boot.
+ * Where the camera sits before anything is known about the user: the whole
+ * world, rather than a city they have no reason to care about. Geolocation,
+ * when granted, flies it to them at {@link DISCOVER_USER_ZOOM}.
  */
 export const DISCOVER_DEFAULT_CENTER = {
-  lat: 41.3874,
-  lng: 2.1686,
-  city: 'Barcelona',
+  lat: 20,
+  lng: 0,
 };
 
-/** Initial zoom level on cold boot — a neighbourhood, not a whole region. */
-export const DISCOVER_DEFAULT_ZOOM = 14;
+/** Initial zoom level on cold boot — the whole globe. */
+export const DISCOVER_DEFAULT_ZOOM = 1.4;
+
+/** Zoom the camera settles on once the user's position resolves. */
+export const DISCOVER_USER_ZOOM = 14;
 
 /**
  * Chip filter offered above the POI list. The leading "For you" entry sends no
