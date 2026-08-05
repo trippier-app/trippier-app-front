@@ -71,12 +71,31 @@ export async function GET(request: Request): Promise<Response> {
   const query = new URLSearchParams(url.searchParams);
   query.delete('subpath');
 
+  const streaming = query.get('stream') === 'true';
+
   try {
     const upstream = await fetch(`${baseUrl}/v1/pois/${subpath}?${query}`, {
       headers: buildAuthHeaders(),
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      // A stream is answered over minutes, not milliseconds: its own frames
+      // are the progress signal, so an abort timer here would cut off the
+      // slow provider it exists to wait for.
+      signal: streaming ? undefined : AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       cache: 'no-store',
     });
+
+    if (streaming && upstream.body) {
+      // Passed through unread, so each frame reaches the browser as the API
+      // writes it rather than after the last provider has reported.
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: {
+          'content-type': upstream.headers.get('content-type') ?? 'application/x-ndjson',
+          'cache-control': 'no-store',
+          'x-accel-buffering': 'no',
+        },
+      });
+    }
+
     const body = await upstream.text();
     const headers: Record<string, string> = {
       'content-type': upstream.headers.get('content-type') ?? 'application/json',

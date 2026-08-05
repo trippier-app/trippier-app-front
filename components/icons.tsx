@@ -289,6 +289,25 @@ export function Languages(props: IconProps) {
   );
 }
 
+/** Plus — creating a new map. */
+export function Plus(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </BaseIcon>
+  );
+}
+
+/** Trash — deleting a map. */
+export function Trash(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    </BaseIcon>
+  );
+}
+
 /** Check — transient "link copied" feedback on the share action. */
 export function Check(props: IconProps) {
   return (

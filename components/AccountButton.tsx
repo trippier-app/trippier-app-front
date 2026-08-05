@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useAuth } from '@/components/AuthProvider';
+import { useCircleTransition } from '@/components/CircleTransition';
 import { useI18n, useT } from '@/components/I18nProvider';
 import { Languages, Layers, LogIn, LogOut, User } from '@/components/icons';
 import { cn } from '@/lib/cn';
@@ -18,9 +20,8 @@ const MENU_EASE = [0.4, 0, 0.2, 1] as const;
  * point to signing in, switching account and — once they exist — the maps of
  * saved places.
  *
- * Authentication is not wired yet, so the menu reads as signed-out and its
- * account entries are inert. It still carries the language selector, which
- * works today.
+ * The saved-maps entry stays inert until those exist; it is the only one
+ * that does.
  *
  * @param props - Extra classes for the trigger.
  * @returns The account button and its menu.
@@ -28,8 +29,25 @@ const MENU_EASE = [0.4, 0, 0.2, 1] as const;
 export default function AccountButton({ className }: AccountButtonProps) {
   const t = useT();
   const { locale, setLocale } = useI18n();
+  const { navigate } = useCircleTransition();
+  const { user, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const goToMaps = () => {
+    setOpen(false);
+    navigate('/maps', { mode: 'fade' });
+  };
+
+  const goToLogin = () => {
+    setOpen(false);
+    const rect = triggerRef.current?.getBoundingClientRect();
+    navigate('/login', {
+      origin: rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined,
+      tone: 'black',
+    });
+  };
 
   useEffect(() => {
     if (!open) {
@@ -56,6 +74,7 @@ export default function AccountButton({ className }: AccountButtonProps) {
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={t('account_label')}
         aria-haspopup="menu"
@@ -84,20 +103,34 @@ export default function AccountButton({ className }: AccountButtonProps) {
               </span>
               <span className="min-w-0">
                 <span className="text-ink block truncate text-[13.5px] font-semibold tracking-tight">
-                  {t('account_guest')}
+                  {user?.name || user?.email || t('account_guest')}
                 </span>
                 <span className="text-mute block truncate font-mono text-[11px]">
-                  {t('account_signed_out')}
+                  {user ? user.email : t('account_signed_out')}
                 </span>
               </span>
             </div>
 
-            <MenuItem icon={<LogIn size={16} />} label={t('account_sign_in')} />
-            <MenuItem icon={<LogOut size={16} />} label={t('account_sign_out')} />
+            {user ? (
+              <MenuItem
+                icon={<LogOut size={16} />}
+                label={t('account_sign_out')}
+                onClick={() => {
+                  setOpen(false);
+                  void signOut();
+                }}
+              />
+            ) : (
+              <MenuItem
+                icon={<LogIn size={16} />}
+                label={t('account_sign_in')}
+                onClick={goToLogin}
+              />
+            )}
             <MenuItem
               icon={<Layers size={16} />}
               label={t('account_my_maps')}
-              badge={t('account_soon')}
+              onClick={() => goToMaps()}
             />
 
             <div className="border-line border-t px-4 py-3">
@@ -135,17 +168,20 @@ function MenuItem({
   icon,
   label,
   badge,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   badge?: string;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
-      disabled
-      className="text-ink flex w-full items-center gap-2.5 px-4 py-2.5 text-start text-[13.5px] font-medium disabled:opacity-45">
+      onClick={onClick}
+      disabled={!onClick}
+      className="text-ink hover:bg-surface2 flex w-full items-center gap-2.5 px-4 py-2.5 text-start text-[13.5px] font-medium transition-colors disabled:opacity-45 disabled:hover:bg-transparent">
       <span className="text-mute shrink-0">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {badge ? (
