@@ -247,6 +247,48 @@ export function Phone(props: IconProps) {
   );
 }
 
+/** Log in — the account menu's sign-in entry. */
+export function LogIn(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <path d="M10 17l5-5-5-5M15 12H3" />
+    </BaseIcon>
+  );
+}
+
+/** Log out — the account menu's sign-out entry. */
+export function LogOut(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5M21 12H9" />
+    </BaseIcon>
+  );
+}
+
+/** Layers — the account menu's saved-maps entry. */
+export function Layers(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 2 2 7l10 5 10-5-10-5z" />
+      <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
+    </BaseIcon>
+  );
+}
+
+/** Globe alt — the account menu's language entry. */
+export function Languages(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M5 8h11M9 4h1.5" />
+      <path d="M11 4c0 6-3.5 10-7 12" />
+      <path d="M8 11c1.5 3.5 4 5.5 6 6.5" />
+      <path d="M13 21l4.5-10 4.5 10M15 17.5h5" />
+    </BaseIcon>
+  );
+}
+
 /** Check — transient "link copied" feedback on the share action. */
 export function Check(props: IconProps) {
   return (

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Bricolage_Grotesque, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import I18nProvider from '@/components/I18nProvider';
 
 const bricolage = Bricolage_Grotesque({
   variable: '--font-bricolage',
@@ -38,9 +39,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="light">
+    <html lang="fr" data-theme="light">
       <body className={`${bricolage.variable} ${jetbrainsMono.variable} antialiased`}>
-        {children}
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );

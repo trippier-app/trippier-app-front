@@ -3,6 +3,7 @@
 import { useCallback, useImperativeHandle, useRef } from 'react';
 import MapLibreMap, { Marker, type MapRef } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useT } from '@/components/I18nProvider';
 import { cn } from '@/lib/cn';
 import type { MapBounds } from '@/lib/discover';
 import type { PoiType } from '@/lib/pois';
@@ -122,6 +123,7 @@ export default function MapView({
   onUserMove,
   ref,
 }: MapViewProps) {
+  const t = useT();
   const mapRef = useRef<MapRef>(null);
 
   useImperativeHandle(ref, () => ({
@@ -173,7 +175,7 @@ export default function MapView({
   if (!styleUrl) {
     return (
       <div className="bg-surface2 text-mute flex h-full items-center justify-center px-10 text-center font-mono text-[12px]">
-        MAPTILER_API_KEY / MAPTILER_MAP_ID are missing from the environment — the map cannot load.
+        {t('map_missing_keys')}
       </div>
     );
   }
@@ -206,7 +208,7 @@ export default function MapView({
             }}>
             <button
               type="button"
-              aria-label={`Place ${marker.id}`}
+              aria-label={t('map_place', { id: marker.id })}
               className={cn(
                 'flex size-7 items-center justify-center rounded-pill text-[11px] leading-none font-bold',
                 'shadow-e2 text-on-emerald ring-2 ring-white/90 transition-transform',

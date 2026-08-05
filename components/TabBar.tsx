@@ -4,22 +4,24 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { useT } from '@/components/I18nProvider';
 import { Compass, Grid, Route, User, Users, type IconProps } from '@/components/icons';
+import type { Dict } from '@/lib/i18n';
 
 interface TabConfig {
   href: string;
-  label: string;
+  labelKey: keyof Dict;
   Icon: (props: IconProps) => React.ReactElement;
   labelWidth: number;
 }
 
 /** The five destinations, in the same order as the mobile tab navigator. */
 const TABS: TabConfig[] = [
-  { href: '/discover', label: 'Discover', Icon: Compass, labelWidth: 64 },
-  { href: '/plan', label: 'Plan', Icon: Route, labelWidth: 30 },
-  { href: '/friends', label: 'Friends', Icon: Users, labelWidth: 52 },
-  { href: '/tools', label: 'Tools', Icon: Grid, labelWidth: 36 },
-  { href: '/you', label: 'You', Icon: User, labelWidth: 26 },
+  { href: '/discover', labelKey: 'tab_discover', Icon: Compass, labelWidth: 64 },
+  { href: '/plan', labelKey: 'tab_plan', Icon: Route, labelWidth: 44 },
+  { href: '/friends', labelKey: 'tab_friends', Icon: Users, labelWidth: 56 },
+  { href: '/tools', labelKey: 'tab_tools', Icon: Grid, labelWidth: 62 },
+  { href: '/you', labelKey: 'tab_you', Icon: User, labelWidth: 46 },
 ];
 
 const PAD_X = 14;
@@ -118,6 +120,7 @@ function useIsWide(): boolean {
  * @returns The bottom navigation bar.
  */
 export default function TabBar() {
+  const t = useT();
   const pathname = usePathname();
   const wide = useIsWide();
   const barRef = useRef<HTMLUListElement>(null);
@@ -178,8 +181,9 @@ export default function TabBar() {
           />
         ) : null}
 
-        {TABS.map(({ href, label, Icon, labelWidth }, index) => {
+        {TABS.map(({ href, labelKey, Icon, labelWidth }, index) => {
           const active = index === activeIdx;
+          const label = t(labelKey);
           return (
             <motion.li
               key={href}

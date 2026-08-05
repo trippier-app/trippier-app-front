@@ -1,3 +1,4 @@
+import type { Dict, TranslateFn } from '@/lib/i18n';
 import type { EnrichedPoi, PoiType } from '@/lib/pois';
 
 /**
@@ -28,18 +29,18 @@ export const DISCOVER_USER_ZOOM = 14;
  */
 export interface DiscoverChip {
   id: 'for-you' | PoiType;
-  label: string;
+  labelKey: keyof Dict;
   types?: PoiType[];
 }
 
 export const DISCOVER_CHIPS: DiscoverChip[] = [
-  { id: 'for-you', label: 'For you' },
-  { id: 'see', label: 'See', types: ['see'] },
-  { id: 'eat', label: 'Eat', types: ['eat'] },
-  { id: 'drink', label: 'Drink', types: ['drink'] },
-  { id: 'do', label: 'Do', types: ['do'] },
-  { id: 'buy', label: 'Buy', types: ['buy'] },
-  { id: 'sleep', label: 'Sleep', types: ['sleep'] },
+  { id: 'for-you', labelKey: 'chip_for_you' },
+  { id: 'see', labelKey: 'chip_see', types: ['see'] },
+  { id: 'eat', labelKey: 'chip_eat', types: ['eat'] },
+  { id: 'drink', labelKey: 'chip_drink', types: ['drink'] },
+  { id: 'do', labelKey: 'chip_do', types: ['do'] },
+  { id: 'buy', labelKey: 'chip_buy', types: ['buy'] },
+  { id: 'sleep', labelKey: 'chip_sleep', types: ['sleep'] },
 ];
 
 /** Maximum radius accepted by the public `/v1/pois/search` endpoint. */
@@ -60,13 +61,32 @@ export const MIN_SEARCH_RADIUS_M = 800;
  * @param chipLabel - Label of the currently selected filter chip.
  * @returns A short caption — "{type}" or "{type} · {chip}".
  */
-export function formatPoiMeta(poi: Pick<EnrichedPoi, 'type'>, chipLabel: string): string {
-  // Uncategorised results come back with an empty type, not "generic".
-  const type = poi.type ? poi.type.charAt(0).toUpperCase() + poi.type.slice(1) : 'Place';
-  if (chipLabel.toLowerCase() === poi.type.toLowerCase()) {
+export function formatPoiMeta(
+  poi: Pick<EnrichedPoi, 'type'>,
+  chipLabel: string,
+  t: TranslateFn,
+): string {
+  const type = t(poiTypeKey(poi.type, 'poi_type'));
+  if (chipLabel.toLowerCase() === type.toLowerCase()) {
     return type;
   }
   return `${type} · ${chipLabel}`;
+}
+
+/**
+ * Dictionary key naming a POI category.
+ *
+ * Uncategorised results come back with an empty type rather than `generic`,
+ * and both land on the neutral "place" wording.
+ *
+ * @param type - POI category as returned by the API.
+ * @param prefix - Which family of labels to read: short or descriptive.
+ * @returns The matching dictionary key.
+ */
+export function poiTypeKey(type: PoiType, prefix: 'poi_type' | 'type_label'): keyof Dict {
+  const known: PoiType[] = ['see', 'eat', 'drink', 'do', 'buy', 'sleep', 'event'];
+  const slug = known.includes(type) ? type : 'place';
+  return `${prefix}_${slug}` as keyof Dict;
 }
 
 /** Rectangular map viewport, in degrees. */

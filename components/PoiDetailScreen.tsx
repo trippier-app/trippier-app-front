@@ -16,7 +16,10 @@ import {
   Phone,
   Share,
 } from '@/components/icons';
+import { useT } from '@/components/I18nProvider';
 import { cn } from '@/lib/cn';
+import { poiTypeKey } from '@/lib/discover';
+import type { TranslateFn } from '@/lib/i18n';
 import {
   buildSourceLinks,
   extractWikidataId,
@@ -78,25 +81,8 @@ const AUTO_SCROLL_MS = 5000;
  * @param type - POI category as returned by the API.
  * @returns A short capitalised label.
  */
-function typeEyebrow(type: PoiType): string {
-  switch (type) {
-    case 'see':
-      return 'Monument · Sight';
-    case 'eat':
-      return 'Restaurant';
-    case 'drink':
-      return 'Bar · Café';
-    case 'do':
-      return 'Activity';
-    case 'buy':
-      return 'Market · Shop';
-    case 'sleep':
-      return 'Stay';
-    case 'event':
-      return 'Event';
-    default:
-      return 'Place';
-  }
+function typeEyebrow(type: PoiType, t: TranslateFn): string {
+  return t(poiTypeKey(type, 'type_label'));
 }
 
 /** Small accent-colored mono lowercase label used above section headings. */
@@ -143,6 +129,7 @@ function HeroMapSlide({
   lng: number;
   styleUrl: string | null;
 }) {
+  const t = useT();
   const mapRef = useRef<MapRef>(null);
 
   useEffect(() => {
@@ -167,7 +154,7 @@ function HeroMapSlide({
   if (!styleUrl) {
     return (
       <div className="bg-surface2 text-mute flex h-full items-center justify-center px-10 text-center font-mono text-[12px]">
-        MAPTILER_API_KEY / MAPTILER_MAP_ID are missing from the environment — the map cannot load.
+        {t('map_missing_keys')}
       </div>
     );
   }
@@ -202,6 +189,7 @@ function HeroMapSlide({
  * informational only. The section hides itself when nothing relevant is set.
  */
 function ContactSection({ contact }: { contact?: PoiContact }) {
+  const t = useT();
   if (!contact) {
     return null;
   }
@@ -215,7 +203,7 @@ function ContactSection({ contact }: { contact?: PoiContact }) {
   if (contact.website) {
     rows.push({
       key: 'website',
-      label: 'Website',
+      label: t('detail_website'),
       value: contact.website.replace(/^https?:\/\//, ''),
       icon: <Globe size={15} />,
       href: contact.website,
@@ -224,7 +212,7 @@ function ContactSection({ contact }: { contact?: PoiContact }) {
   if (contact.phone) {
     rows.push({
       key: 'phone',
-      label: 'Phone',
+      label: t('detail_phone'),
       value: contact.phone,
       icon: <Phone size={15} />,
       href: `tel:${contact.phone.replace(/\s+/g, '')}`,
@@ -233,7 +221,7 @@ function ContactSection({ contact }: { contact?: PoiContact }) {
   if (contact.email) {
     rows.push({
       key: 'email',
-      label: 'Email',
+      label: t('detail_email'),
       value: contact.email,
       icon: <ExternalLink size={15} />,
       href: `mailto:${contact.email}`,
@@ -242,7 +230,7 @@ function ContactSection({ contact }: { contact?: PoiContact }) {
   if (contact.opening_hours) {
     rows.push({
       key: 'hours',
-      label: 'Hours',
+      label: t('detail_hours'),
       value: contact.opening_hours,
       icon: <Clock size={15} />,
     });
@@ -252,7 +240,7 @@ function ContactSection({ contact }: { contact?: PoiContact }) {
   }
   return (
     <div className="mt-[18px] flex flex-col gap-2">
-      <Eyebrow>Contact</Eyebrow>
+      <Eyebrow>{t('detail_contact')}</Eyebrow>
       <div className="border-line bg-surface mt-1 overflow-hidden rounded-lg border">
         {rows.map((row, index) => {
           const rowClass = cn(
@@ -283,7 +271,7 @@ function ContactSection({ contact }: { contact?: PoiContact }) {
               href={row.href}
               target={row.href.startsWith('http') ? '_blank' : undefined}
               rel="noreferrer"
-              aria-label={`Open ${row.label}: ${row.value}`}
+              aria-label={t('detail_open_link', { label: row.label, value: row.value })}
               className={cn(rowClass, 'transition-opacity hover:opacity-60')}>
               {inner}
             </a>
@@ -319,6 +307,7 @@ function SourceRow({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   return (
     <div className={cn(index > 0 && 'border-line border-t')}>
       <div className="flex items-center gap-3.5 px-[18px] py-[13px]">
@@ -326,7 +315,7 @@ function SourceRow({
           type="button"
           onClick={onToggle}
           aria-expanded={isExpanded}
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} preview`}
+          aria-label={t(isExpanded ? 'detail_collapse' : 'detail_expand', { label: row.label })}
           className="flex min-w-0 flex-1 items-center gap-2.5 text-left transition-opacity hover:opacity-70">
           <Globe size={16} className="text-mute shrink-0" />
           <span className="text-ink truncate text-[14.5px] font-semibold tracking-[-0.15px]">
@@ -337,14 +326,14 @@ function SourceRow({
           href={row.url}
           target="_blank"
           rel="noreferrer"
-          aria-label={`Open ${row.label} in browser`}
+          aria-label={t('detail_open_browser', { label: row.label })}
           className="text-mute p-0.5 transition-opacity hover:opacity-50">
           <ExternalLink size={16} />
         </a>
         <button
           type="button"
           onClick={onToggle}
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} preview`}
+          aria-label={t(isExpanded ? 'detail_collapse' : 'detail_expand', { label: row.label })}
           className="text-mute transition-opacity hover:opacity-50">
           <ChevronDown
             size={16}
@@ -368,7 +357,7 @@ function SourceRow({
               </span>
               <iframe
                 src={toPreviewUrl(row.url)}
-                title={`${row.label} preview`}
+                title={t('detail_preview_title', { label: row.label })}
                 loading="lazy"
                 className="relative h-full w-full border-0"
               />
@@ -394,6 +383,7 @@ function SourcesSection({
   sources: PoiSourceLink[];
   wikidataId?: string;
 }) {
+  const t = useT();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const rows: SourceRowDef[] = sources.map(source => ({
@@ -414,7 +404,7 @@ function SourcesSection({
 
   return (
     <div className="mt-[18px] flex flex-col gap-2">
-      <Eyebrow>Sources</Eyebrow>
+      <Eyebrow>{t('detail_sources')}</Eyebrow>
       <div className="border-line bg-surface mt-1 overflow-hidden rounded-lg border">
         {rows.map((row, index) => (
           <SourceRow
@@ -453,6 +443,8 @@ function useIsWide(): boolean {
 
 interface PoiDetailScreenProps {
   poi: EnrichedPoi;
+  /** True while a shared link is still resolving the place. */
+  pending?: boolean;
   /** MapTiler style URL resolved server-side; null when the key is unset. */
   mapStyleUrl: string | null;
   onClose: () => void;
@@ -479,7 +471,13 @@ interface PoiDetailScreenProps {
  * @param props - The place to render and the close callback.
  * @returns The POI detail overlay.
  */
-export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetailScreenProps) {
+export default function PoiDetailScreen({
+  poi,
+  pending = false,
+  mapStyleUrl,
+  onClose,
+}: PoiDetailScreenProps) {
+  const t = useT();
   const wide = useIsWide();
   const rootRef = useRef<HTMLDivElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -647,10 +645,10 @@ export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetail
             </div>
           )}
           <div className="pointer-events-none absolute bottom-4 left-4 flex gap-2">
-            <Tag variant="ink">{typeEyebrow(poi.type)}</Tag>
+            {pending ? null : <Tag variant="ink">{typeEyebrow(poi.type, t)}</Tag>}
             {hasCoords ? (
               <Tag variant="emerald" dot>
-                Located
+                {t('detail_located')}
               </Tag>
             ) : null}
           </div>
@@ -670,19 +668,26 @@ export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetail
         </div>
 
         <div className="flex flex-col gap-3 px-[22px] pt-[22px] pb-[110px]">
-          <Eyebrow>{typeEyebrow(poi.type)}</Eyebrow>
+          {pending ? (
+            <div className="bg-surface2 h-3.5 w-24 animate-pulse rounded-pill" />
+          ) : (
+            <Eyebrow>{typeEyebrow(poi.type, t)}</Eyebrow>
+          )}
           <h1 className="text-ink mt-2 text-[32px] font-bold tracking-[-0.96px]">
             {poi.name}
             <span className="text-emerald">.</span>
           </h1>
 
-          {description ? (
+          {pending ? (
+            <div className="mt-1 flex flex-col gap-2">
+              <div className="bg-surface2 h-3.5 w-full animate-pulse rounded-pill" />
+              <div className="bg-surface2 h-3.5 w-11/12 animate-pulse rounded-pill" />
+              <div className="bg-surface2 h-3.5 w-2/3 animate-pulse rounded-pill" />
+            </div>
+          ) : description ? (
             <p className="text-ink2 mt-1 text-[14.5px] leading-[22px]">{description}</p>
           ) : (
-            <p className="text-mute font-mono text-[12.5px]">
-              We don&apos;t have a description yet — open in maps or save it to a trip and
-              we&apos;ll keep enriching it in the background.
-            </p>
+            <p className="text-mute font-mono text-[12.5px]">{t('detail_no_description')}</p>
           )}
 
           {hasCoords ? (
@@ -694,9 +699,12 @@ export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetail
             </p>
           ) : null}
 
-          <ContactSection contact={poi.contact} />
-
-          <SourcesSection sources={sources} wikidataId={wikidataId} />
+          {pending ? null : (
+            <>
+              <ContactSection contact={poi.contact} />
+              <SourcesSection sources={sources} wikidataId={wikidataId} />
+            </>
+          )}
         </div>
       </div>
 
@@ -709,14 +717,14 @@ export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetail
         }}>
         <button
           type="button"
-          aria-label="Back"
+          aria-label={t('detail_back')}
           onClick={onClose}
           className="border-line bg-surface text-ink shadow-e1 pointer-events-auto flex size-[42px] items-center justify-center rounded-pill border">
           <ArrowLeft size={20} />
         </button>
         <button
           type="button"
-          aria-label={linkCopied ? 'Link copied' : 'Share'}
+          aria-label={t(linkCopied ? 'detail_link_copied' : 'detail_share')}
           onClick={handleShare}
           className="border-line bg-surface shadow-e1 pointer-events-auto flex size-[42px] items-center justify-center rounded-pill border">
           {linkCopied ? (
@@ -732,13 +740,13 @@ export default function PoiDetailScreen({ poi, mapStyleUrl, onClose }: PoiDetail
           type="button"
           className="border-line bg-surface text-ink flex flex-1 items-center justify-center gap-[9px] rounded-pill border-[1.5px] py-[15px] text-[15px] font-semibold tracking-[-0.1px]">
           <MapPin size={17} />
-          Directions
+          {t('detail_directions')}
         </button>
         <button
           type="button"
           className="bg-emerald text-on-emerald flex flex-[1.3] items-center justify-center gap-[9px] rounded-pill py-[15px] text-[15px] font-semibold tracking-[-0.1px]">
           <Bookmark size={17} />
-          Save to trip
+          {t('detail_save')}
         </button>
       </div>
     </motion.div>
