@@ -9,7 +9,12 @@ import Chip from '@/components/Chip';
 import { useT } from '@/components/I18nProvider';
 import { useMaps } from '@/components/MapsProvider';
 import { cn } from '@/lib/cn';
-import MapView, { type MapCamera, type MapMarker, type MapViewHandle } from '@/components/MapView';
+import MapView, {
+  MapCorners,
+  type MapCamera,
+  type MapMarker,
+  type MapViewHandle,
+} from '@/components/MapView';
 import PoiDetailScreen from '@/components/PoiDetailScreen';
 import PoiRow, { PoiRowSkeleton } from '@/components/PoiRow';
 import SourceChips from '@/components/SourceChips';
@@ -755,20 +760,20 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
     </>
   );
 
+  // Geometry of the wide-layout map box, shared by the box itself and the
+  // sibling carrying its drop shadow (see {@link MapCorners}).
+  const mapBox = wide
+    ? {
+        top: FRAME,
+        bottom: FRAME,
+        right: FRAME,
+        left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
+      }
+    : undefined;
+
   return (
     <div ref={stageRef} className="relative h-full w-full overflow-hidden">
-      <div
-        className={cn('absolute', wide ? 'shadow-e1 overflow-hidden rounded-xl' : 'inset-0')}
-        style={
-          wide
-            ? {
-                top: FRAME,
-                bottom: FRAME,
-                right: FRAME,
-                left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
-              }
-            : undefined
-        }>
+      <div className={cn('absolute', wide ? 'overflow-hidden' : 'inset-0')} style={mapBox}>
         <MapView
           ref={mapRef}
           styleUrl={mapStyleUrl}
@@ -782,7 +787,16 @@ export default function DiscoverScreen({ mapStyleUrl }: DiscoverScreenProps) {
             userMoved.current = true;
           }}
         />
+        {wide ? <MapCorners /> : null}
       </div>
+
+      {wide ? (
+        <div
+          aria-hidden
+          className="shadow-e1 pointer-events-none absolute rounded-xl"
+          style={mapBox}
+        />
+      ) : null}
 
       {/*
         The frame that turns the map into a rounded cutout once the drawer is

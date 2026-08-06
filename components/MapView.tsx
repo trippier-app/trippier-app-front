@@ -103,6 +103,37 @@ function glyphForPoiType(type: PoiType): string {
 }
 
 /**
+ * Paints the rounded corners of a framed map.
+ *
+ * Firefox-family engines do not clip a WebGL canvas to an ancestor's
+ * border-radius once the canvas is promoted to its own compositing layer, so
+ * the map keeps painting square corners inside the rounded frame. It surfaces
+ * late: MapLibre's globe leaves the corners transparent, and only once the
+ * projection gives way to mercator does the style fill the canvas edge to edge
+ * and reveal them. Rounding the canvas itself, or clip-path on either it or
+ * the frame, takes the same compositor path and fails the same way.
+ *
+ * So the corners are painted rather than clipped, as the mobile cutout already
+ * does it: a huge spread shadow floods everything outside this rounded box
+ * with the page background, and the frame's square `overflow: hidden` trims
+ * that flood to four corner wedges. The frame therefore carries no radius of
+ * its own — the silhouette is this overlay's — and its drop shadow moves to a
+ * sibling that can still round it, keeping the wedges and the background
+ * around them under one continuous shadow rather than a step of one level.
+ *
+ * @returns The corner overlay, to be dropped inside the frame.
+ */
+export function MapCorners() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-xl"
+      style={{ boxShadow: '0 0 0 9999px var(--m-bg)' }}
+    />
+  );
+}
+
+/**
  * Full-bleed MapTiler map.
  *
  * The camera is uncontrolled — MapLibre owns it, and the screen only listens

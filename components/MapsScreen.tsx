@@ -5,7 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import Chip from '@/components/Chip';
 import { useCircleTransition } from '@/components/CircleTransition';
 import { useI18n, useT } from '@/components/I18nProvider';
-import MapView, { type MapMarker, type MapViewHandle } from '@/components/MapView';
+import MapView, { MapCorners, type MapMarker, type MapViewHandle } from '@/components/MapView';
 import { useMaps } from '@/components/MapsProvider';
 import PoiRow from '@/components/PoiRow';
 import { Layers } from '@/components/icons';
@@ -225,20 +225,20 @@ export default function MapsScreen({ mapStyleUrl }: MapsScreenProps) {
     );
   }
 
+  // Geometry of the wide-layout map box, shared by the box itself and the
+  // sibling carrying its drop shadow (see {@link MapCorners}).
+  const mapBox = wide
+    ? {
+        top: FRAME,
+        bottom: FRAME,
+        right: FRAME,
+        left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
+      }
+    : undefined;
+
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <div
-        className={cn('absolute', wide ? 'shadow-e1 overflow-hidden rounded-xl' : 'inset-0')}
-        style={
-          wide
-            ? {
-                top: FRAME,
-                bottom: FRAME,
-                right: FRAME,
-                left: `calc(${PANEL_FRACTION * 100}% + ${2 * FRAME}px)`,
-              }
-            : undefined
-        }>
+      <div className={cn('absolute', wide ? 'overflow-hidden' : 'inset-0')} style={mapBox}>
         <MapView
           ref={mapRef}
           styleUrl={mapStyleUrl}
@@ -248,7 +248,16 @@ export default function MapsScreen({ mapStyleUrl }: MapsScreenProps) {
           selectedId={selectedPoiId}
           onBoundsChange={() => setMapReady(true)}
         />
+        {wide ? <MapCorners /> : null}
       </div>
+
+      {wide ? (
+        <div
+          aria-hidden
+          className="shadow-e1 pointer-events-none absolute rounded-xl"
+          style={mapBox}
+        />
+      ) : null}
 
       <section
         aria-label={t('maps_title')}
