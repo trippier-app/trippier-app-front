@@ -71,8 +71,13 @@ const PANEL_FRACTION = 1 / 3;
  * Viewport width at which the results move from the bottom drawer to the
  * side panel. Matches Tailwind's `md:` breakpoint, which gates the same
  * switch in the markup — if one moves, the other must follow.
+ *
+ * Stated in rem, like Tailwind's own `md:`, and not in the 768px it equals at
+ * a default font size: a reader who enlarged that font moves the CSS
+ * breakpoint but not a px one, and the two halves of the switch would then
+ * disagree over a band of widths — markup in one layout, geometry in the other.
  */
-const WIDE_MQ = '(min-width: 768px)';
+const WIDE_MQ = '(min-width: 48rem)';
 const DRAWER_EASE = [0.4, 0, 0.2, 1] as const;
 
 /**
