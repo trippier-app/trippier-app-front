@@ -44,7 +44,7 @@ const SEARCH_TOP = 19;
 const SEARCH_X = 20;
 const FRAME = 12;
 const PANEL_FRACTION = 1 / 3;
-const WIDE_MQ = '(min-width: 48rem)';
+const WIDE_MQ = '(min-width: 768px)';
 /**
  * Size of the round floating header buttons. The back one copies the exact
  * footprint of the search bar's 42px leading slot on the Discover screen —

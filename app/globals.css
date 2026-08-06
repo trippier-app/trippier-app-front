@@ -128,17 +128,3 @@ body {
 .maplibregl-ctrl-logo {
   display: none !important;
 }
-
-/*
- * Firefox-family engines (Zen included) do not clip a WebGL canvas to an
- * ancestor's border-radius once the canvas is promoted to its own compositing
- * layer — the map then paints square corners inside the rounded box framing
- * it, while Chromium and mobile get it right. Carrying the radius down to the
- * canvas turns the clip into the canvas's own, which every engine honours.
- * `inherit` keeps this free of magic numbers: a square frame passes 0 down.
- */
-.maplibregl-map,
-.maplibregl-canvas-container,
-.maplibregl-canvas {
-  border-radius: inherit;
-}

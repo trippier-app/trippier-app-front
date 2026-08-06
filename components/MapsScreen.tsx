@@ -17,7 +17,7 @@ import type { PoiType } from '@/lib/pois';
 const TABBAR_RESERVED = 88;
 const FRAME = 12;
 const PANEL_FRACTION = 1 / 3;
-const WIDE_MQ = '(min-width: 48rem)';
+const WIDE_MQ = '(min-width: 768px)';
 /** Zoom used when framing a single place, matching the Discover screen. */
 const FOCUS_ZOOM = 16;
 /** Padding, in degrees, around the bounding box of everything on show. */

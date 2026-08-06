@@ -40,7 +40,7 @@ const BOTTOM_OFFSET = 20;
  */
 const FRAME = 12;
 const PANEL_FRACTION = 1 / 3;
-const WIDE_MQ = '(min-width: 48rem)';
+const WIDE_MQ = '(min-width: 768px)';
 
 /**
  * Width of a cell when it is the active one — icon plus its label.
