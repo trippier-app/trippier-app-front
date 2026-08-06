@@ -5,6 +5,7 @@
  */
 
 import { poiKey, type EnrichedPoi } from '@/lib/pois';
+import type { MapVisibility } from '@/lib/social';
 
 /** One saved place, as the back-end returns it inside a map. */
 export interface SavedPoi {
@@ -23,8 +24,8 @@ export interface UserMap {
   title: string;
   icon?: string | null;
   description?: string | null;
-  isPublic: boolean;
-  isVisible: boolean;
+  visibility: MapVisibility;
+  allowedUserIds: number[];
   pois: SavedPoi[];
 }
 

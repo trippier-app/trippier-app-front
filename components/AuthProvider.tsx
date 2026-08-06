@@ -9,7 +9,12 @@ interface AuthValue {
   /** True until the session cookie has been resolved once. */
   pending: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  /** Opens an account and has its code mailed; signs nobody in on its own. */
   signUp: (email: string, password: string, name?: string) => Promise<void>;
+  /** Confirms an address with its mailed code, which signs the account in. */
+  verify: (email: string, code: string) => Promise<void>;
+  /** Mails a fresh code to an address still awaiting confirmation. */
+  resend: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -54,7 +59,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, name?: string) => {
-    setUser(await auth.register(email, password, name));
+    await auth.register(email, password, name);
+  }, []);
+
+  const verify = useCallback(async (email: string, code: string) => {
+    setUser(await auth.verifyCode(email, code));
+  }, []);
+
+  const resend = useCallback(async (email: string) => {
+    await auth.resendCode(email);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -63,8 +76,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const value = useMemo<AuthValue>(
-    () => ({ user, pending, signIn, signUp, signOut }),
-    [user, pending, signIn, signUp, signOut],
+    () => ({ user, pending, signIn, signUp, verify, resend, signOut }),
+    [user, pending, signIn, signUp, verify, resend, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

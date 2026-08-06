@@ -9,35 +9,62 @@ export interface AuthUser {
   email: string;
   name?: string | null;
   role?: string;
+  verified?: boolean;
+  createdAt?: string;
+}
+
+/** An address that exists but still has to be confirmed with a mailed code. */
+export interface PendingVerification {
+  status: 'verification_required';
+  email: string;
 }
 
 interface AuthResponse {
   user?: AuthUser | null;
+  status?: string;
+  email?: string;
   error?: string;
+  code?: string;
 }
 
 /**
- * Posts credentials to a credential endpoint.
+ * A credential exchange the back-end refused.
  *
- * @param action - Either `login` or `register`.
- * @param body - Credentials accepted by the back-end.
- * @returns The signed-in user.
- * @throws When the back-end rejects the credentials or is unreachable.
+ * Carries `verification_required` when the account exists but its address was
+ * never confirmed, which is a step to take rather than a failure to report.
  */
-async function exchange(
-  action: 'login' | 'register',
-  body: Record<string, string>,
-): Promise<AuthUser> {
+export class AuthError extends Error {
+  readonly code?: 'verification_required';
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'AuthError';
+    this.code = code === 'verification_required' ? 'verification_required' : undefined;
+  }
+}
+
+/**
+ * Posts to a credential endpoint and unwraps its answer.
+ *
+ * @param action - The endpoint segment under `/api/auth`.
+ * @param body - Payload accepted by the back-end.
+ * @returns The parsed response body.
+ * @throws AuthError When the back-end rejects the exchange.
+ */
+async function exchange(action: string, body: Record<string, string>): Promise<AuthResponse> {
   const response = await fetch(`/api/auth/${action}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => null)) as AuthResponse | null;
-  if (!response.ok || !payload?.user) {
-    throw new Error(payload?.error ?? `Authentication failed (${response.status})`);
+  if (!response.ok) {
+    throw new AuthError(
+      payload?.error ?? `Authentication failed (${response.status})`,
+      payload?.code,
+    );
   }
-  return payload.user;
+  return payload ?? {};
 }
 
 /**
@@ -46,21 +73,60 @@ async function exchange(
  * @param email - Account email.
  * @param password - Account password.
  * @returns The signed-in user.
+ * @throws AuthError Tagged `verification_required` when the address was never
+ *   confirmed, so the caller can offer the code step instead of an error.
  */
-export function login(email: string, password: string): Promise<AuthUser> {
-  return exchange('login', { email, password });
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const payload = await exchange('login', { email, password });
+  if (!payload.user) {
+    throw new AuthError('Authentication failed');
+  }
+  return payload.user;
 }
 
 /**
- * Creates an account and signs in with it.
+ * Opens an account. It cannot be used until {@link verifyCode} confirms the
+ * address with the code the back-end mails out.
  *
- * @param email - Account email.
+ * @param email - Address to register.
  * @param password - Chosen password, at least six characters.
  * @param name - Optional display name.
- * @returns The newly created user.
+ * @returns The address now awaiting its code.
  */
-export function register(email: string, password: string, name?: string): Promise<AuthUser> {
-  return exchange('register', name ? { email, password, name } : { email, password });
+export async function register(
+  email: string,
+  password: string,
+  name?: string,
+): Promise<PendingVerification> {
+  await exchange('register', name ? { email, password, name } : { email, password });
+  return { status: 'verification_required', email };
+}
+
+/**
+ * Confirms an address with the code mailed to it, which also signs the
+ * account in.
+ *
+ * @param email - Address being confirmed.
+ * @param code - The six digits from the email.
+ * @returns The now signed-in user.
+ */
+export async function verifyCode(email: string, code: string): Promise<AuthUser> {
+  const payload = await exchange('verify', { email, code });
+  if (!payload.user) {
+    throw new AuthError('Authentication failed');
+  }
+  return payload.user;
+}
+
+/**
+ * Asks for a fresh code on an address still awaiting confirmation.
+ *
+ * @param email - Address to mail again.
+ * @returns The address still awaiting its code.
+ */
+export async function resendCode(email: string): Promise<PendingVerification> {
+  await exchange('resend', { email });
+  return { status: 'verification_required', email };
 }
 
 /**
